@@ -27,10 +27,20 @@ Tip: on GitHub, open a file and click the **Copy raw file** button (two squares)
 4. Select everything, delete it, and paste the contents of `apps-script/appsscript.json`.
 
 ## 3. Paste the code
-1. Open **Code.gs**. Select everything, delete it, and paste the contents of `apps-script/dist/EmailHelper.gs`.
+Each paste goes into its **own file**: click the file's name in the **Files** list on the left first.
+Don't put the code inside `appsscript.json`.
+
+1. Click **Code.gs** in the Files list. Select everything, delete it, and paste the contents of `apps-script/dist/EmailHelper.gs`.
 2. Click the **+** next to "Files" and choose **Script**. Name it **Config** (it becomes `Config.gs`).
 3. Delete what's in it and paste your private config.
 4. Press **Ctrl+S** / **⌘S** to save.
+
+When you're done, the Files list shows exactly three files:
+```
+appsscript.json   ← settings only
+Code.gs           ← the big EmailHelper.gs paste
+Config.gs         ← your private config
+```
 
 ## 4. Run setup (creates your secret token)
 1. In the toolbar function dropdown (next to **Debug**), pick **setup** and click **Run**.
