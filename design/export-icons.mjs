@@ -1,7 +1,7 @@
 // Exports each design/icons/*.svg to PNG at the iOS / PWA sizes.
 // Usage: node design/export-icons.mjs
 import { createRequire } from 'module';
-import { readdirSync, mkdirSync } from 'fs';
+import { readdirSync, mkdirSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -17,8 +17,9 @@ for (const f of readdirSync(join(here, 'icons')).filter((f) => f.endsWith('.svg'
   mkdirSync(join(here, 'icons', 'png', name), { recursive: true });
   for (const s of SIZES) {
     await page.setViewportSize({ width: s, height: s });
-    await page.setContent(`<style>*{margin:0}img{display:block;width:${s}px;height:${s}px}</style><img src="file://${join(here, 'icons', f)}">`);
-    await page.waitForLoadState('networkidle');
+    // Inline the SVG (an <img src="file://…"> is blocked on about:blank and renders as a broken image).
+    const svg = readFileSync(join(here, 'icons', f), 'utf8');
+    await page.setContent(`<style>*{margin:0}svg{display:block;width:${s}px;height:${s}px}</style>${svg}`);
     await page.screenshot({ path: join(here, 'icons', 'png', name, `${name}-${s}.png`) });
   }
   console.log('exported', name);
