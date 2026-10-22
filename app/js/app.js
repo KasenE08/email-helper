@@ -179,7 +179,12 @@ function openCard(id) {
     if (clears) setTimeout(() => startFade(id), 800);
     return;
   }
-  if (clears) awaitingReturn.add(id);
+  if (clears) {
+    awaitingReturn.add(id);
+    // iOS freezes this page while Gmail is open, so this timer effectively runs once you're back.
+    // It's the main trigger: home-screen apps don't reliably fire "you're back" events.
+    setTimeout(checkReturn, 1500);
+  }
   const kind = LINKS[store.settings.openIn] ? store.settings.openIn : OPEN_IN[store.settings.openIn] || 'app-thread';
   openLink(LINKS[kind].url(e, store.settings));
 }
@@ -202,12 +207,25 @@ function startFade(id) {
 }
 
 // Coming back from Gmail: start fading whatever was opened.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
+function checkReturn() {
+  if (document.visibilityState !== 'visible' || !awaitingReturn.size) return;
   for (const id of awaitingReturn) startFade(id);
   awaitingReturn.clear();
   render();
-});
+}
+document.addEventListener('visibilitychange', checkReturn);
+window.addEventListener('pageshow', checkReturn);
+window.addEventListener('focus', checkReturn);
+
+/** Backup: anything you opened over a minute ago that never got to fade is cleared now. */
+function clearStaleTaps() {
+  const now = Date.now();
+  for (const [id, ts] of Object.entries(store.state.tapped)) {
+    if (store.state.cleared[id] || store.state.hidden[id] || fading.has(id) || awaitingReturn.has(id)) continue;
+    const e = findEmail(id);
+    if (e && clearsOnTap(e, now) && now - ts > 60e3) { store.clear(id); sync('clear', id); }
+  }
+}
 window.addEventListener('online', () => { idleBanner(); flushPending(); });
 window.addEventListener('offline', idleBanner);
 
@@ -225,6 +243,7 @@ async function refresh() {
       store.saveCache({ emails: res.emails, refreshedAt: res.refreshedAt || Date.now(), removed: res.removed || [] });
       if (res.done) {
         store.prune(res.emails.map((e) => e.id));
+        clearStaleTaps();
         banner('');
         break;
       }
@@ -441,8 +460,9 @@ if (params.has('demo')) store.saveSettings({ demo: true });
 // Tapped cards from a session iOS killed in the background still fade on reopen.
 for (const [id, ts] of Object.entries(store.state.tapped)) {
   const e = findEmail(id);
-  if (e && clearsOnTap(e) && Date.now() - ts < RETURN_WINDOW_MS) awaitingReturn.add(id);
+  if (e && clearsOnTap(e) && Date.now() - ts < RETURN_WINDOW_MS && !store.state.cleared[id]) awaitingReturn.add(id);
 }
+clearStaleTaps();
 
 render();
 idleBanner();

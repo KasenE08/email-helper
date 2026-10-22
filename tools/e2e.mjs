@@ -112,14 +112,20 @@ const c = await center(momSel);
 await page.mouse.click(c.x, c.y);
 const opened = await page.evaluate(() => window.__opened);
 check(opened[0]?.includes('mail.google.com/mail/u/kasen.test%40gmail.com/#all/s05'), 'tap opens the Gmail link for that thread');
-await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); // "came back from Gmail"
-await page.waitForTimeout(3000);
+// No "came back" event on purpose: iOS home-screen apps don't reliably send one.
+await page.waitForTimeout(4000);
 check(await page.locator(momSel + '.clearing').count() === 1, 'after returning, the card shows the 10-second clearing line');
 await shot('5-tapped-clearing');
 await page.waitForTimeout(8000);
 check(!(await page.locator(momSel).count()), 'card gone after ~10 s');
 await page.waitForTimeout(300);
 check(serverState().removed.includes('s05'), '"clear" was sent to the script');
+
+// Backup path: a card opened over a minute ago that never faded is cleared on the next refresh
+await page.evaluate(() => { const st = JSON.parse(localStorage.getItem('eh.state')); st.tapped.s27 = Date.now() - 40 * 60e3; localStorage.setItem('eh.state', JSON.stringify(st)); });
+await page.reload();
+await page.waitForTimeout(800);
+check(!(await page.locator('.item[data-id="s27"]').count()) && serverState().removed.includes('s27'), 'opened-but-never-faded card is cleared on reopen (and in the script)');
 
 // 5. Clear Safari data -> reconnect -> hidden cards stay hidden (state lives in the script)
 await page.evaluate(() => localStorage.clear());
