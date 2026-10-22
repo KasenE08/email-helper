@@ -1,4 +1,4 @@
-// UI: rendering, gestures (tap / long-press / swipe), toast, settings.
+// UI: rendering, refresh loop, gestures (tap / long-press / swipe), toast, settings.
 import { CATS, group, counts, deadlineInfo, codeMinutesLeft, clearsOnTap, ago, refreshedLabel } from './model.js';
 import { store } from './store.js';
 import * as api from './api.js';
@@ -6,12 +6,13 @@ import * as api from './api.js';
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const FADE_MS = 10_000;          // tapped card fades this long after you come back
+const FADE_MS = 10_000;             // tapped card fades this long after you come back
 const LONG_PRESS_MS = 500;
 const RETURN_WINDOW_MS = 30 * 60e3; // reopening the app within 30 min still fades tapped cards
+const MAX_CHUNKS = 60;              // safety cap on one refresh's scan loop
 
-const fading = new Map();        // id -> fade start (ms)
-const awaitingReturn = new Set(); // ids opened in Gmail; fade starts when the app is visible again
+const fading = new Map();           // id -> fade start (ms)
+const awaitingReturn = new Set();   // ids opened in Gmail; fade starts when the app is visible again
 let gesture = null;
 let refreshing = false;
 
@@ -23,7 +24,7 @@ function render() {
   const groups = group(store.cache.emails, store.state, now);
   const c = counts(groups, now);
 
-  $('#refreshed').textContent = refreshedLabel(store.cache.refreshedAt, now);
+  $('#refreshed').textContent = refreshing ? 'Refreshing…' : refreshedLabel(store.cache.refreshedAt, now);
   $('#counts').innerHTML =
     `<b>${c.action}</b> need action · <b>${c.week}</b> due this week` +
     (c.overdue ? ` · <span class="bad"><b>${c.overdue}</b> overdue</span>` : '') +
@@ -33,7 +34,7 @@ function render() {
   if (!total) {
     $('#list').innerHTML = store.cache.refreshedAt
       ? '<div class="empty-all"><b>All clear</b>Nothing needs you right now.</div>'
-      : '<div class="empty-all"><b>No emails yet</b>Tap refresh to load your inbox.</div>';
+      : refreshing ? '' : '<div class="empty-all"><b>No emails yet</b>Tap ↻ to load your inbox.</div>';
     $('#hint').hidden = true;
     return;
   }
@@ -73,8 +74,15 @@ function banner(html, kind = '') {
   b.hidden = false;
 }
 
-function connectionBanner() {
-  if (!store.isConfigured() && !store.settings.demo) banner('Not connected yet. Open <b>Settings</b> to add your script URL and token, or turn on demo data.');
+function progressBanner(processed, total) {
+  const pct = total ? Math.round((processed / total) * 100) : 0;
+  banner(`Processing inbox… <b>${processed}/${total}</b><div class="bar"><i style="width:${pct}%"></i></div>`);
+}
+
+function idleBanner() {
+  if (!navigator.onLine && !store.settings.demo) banner('Offline. Showing your saved emails.');
+  else if (!store.isConfigured() && !store.settings.demo) banner('Not connected yet. Open <b>Settings</b> to add your script URL and token, or turn on demo data.');
+  else banner('');
 }
 
 // ---------- Toast ----------
@@ -87,9 +95,28 @@ function toast(msg, undo) {
   btn.onclick = () => { hideToast(); undo?.(); };
   $('#toast').classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, undo ? 5000 : 2200);
+  toastTimer = setTimeout(hideToast, undo ? 5000 : 2600);
 }
 function hideToast() { $('#toast').classList.remove('show'); }
+
+// ---------- Syncing hide / tap / clear with the script ----------
+
+/** Send an event now; if that fails (offline etc.), queue it for the next refresh. */
+function sync(action, id) {
+  if (store.settings.demo) return;
+  api.sendEvent(store.settings, action, id).catch(() => store.queueEvent(action, id));
+}
+
+/** Re-send queued events in order. Stops at the first failure (keeps the rest). */
+async function flushPending() {
+  if (store.settings.demo || !store.pending.length) return;
+  const queue = [...store.pending];
+  while (queue.length) {
+    try { await api.sendEvent(store.settings, queue[0].action, queue[0].id); queue.shift(); }
+    catch { break; }
+  }
+  store.setPending(queue);
+}
 
 // ---------- Actions ----------
 
@@ -110,31 +137,42 @@ function hideCard(id) {
   fading.delete(id);
   animateOut(cardEl(id), () => {
     store.hide(id);
-    api.sendEvent(store.settings, 'hide', id);
+    sync('hide', id);
     render();
     toast('Hidden', () => restore(id));
   });
 }
 
 function restore(id) {
+  const cached = !!findEmail(id);
   store.restore(id);
-  api.sendEvent(store.settings, 'restore', id);
-  render();
+  if (cached || store.settings.demo) { sync('restore', id); render(); return; }
+  // The script stopped sending this card while it was hidden: tell it, then refresh to get it back.
+  store.queueEvent('restore', id);
+  refresh();
 }
 
-function gmailLink(id) {
-  const s = store.settings;
-  if (s.openIn === 'app') return `googlegmail:///cv=${encodeURIComponent(id)}/accountId=1&create-new-tab`;
-  const acct = s.gmail ? encodeURIComponent(s.gmail) : '0';
-  return `https://mail.google.com/mail/u/${acct}/#all/${encodeURIComponent(id)}`;
+// Link formats. Which ones open the exact email on iPhone is what Settings → "Test email links" checks.
+const LINKS = {
+  'app-thread': { label: 'Gmail app · thread link', url: (e) => `googlegmail:///cv=${encodeURIComponent(e.id)}/accountId=1&create-new-tab` },
+  'app-thread-plain': { label: 'Gmail app · thread link (short)', url: (e) => `googlegmail:///cv=${encodeURIComponent(e.id)}` },
+  app: { label: 'Gmail app · just open the app', url: () => 'googlegmail://' },
+  'web-thread': { label: 'Browser · thread', url: (e, s) => `https://mail.google.com/mail/u/${s.gmail ? encodeURIComponent(s.gmail) : '0'}/#all/${encodeURIComponent(e.id)}` },
+  'web-msgid': { label: 'Browser · search by Message-ID', url: (e, s) => `https://mail.google.com/mail/u/${s.gmail ? encodeURIComponent(s.gmail) : '0'}/#search/${encodeURIComponent('rfc822msgid:' + (e.msgId || ''))}` },
+};
+const OPEN_IN = { app: 'app-thread', web: 'web-thread' };
+
+function openLink(url) {
+  if (url.startsWith('http')) window.open(url, '_blank', 'noopener');
+  else window.location.href = url;
 }
 
 function openCard(id) {
   const e = findEmail(id);
   if (!e) return;
   store.tap(id);
-  api.sendEvent(store.settings, 'tap', id);
-  const clears = clearsOnTap(e);
+  sync('tap', id);
+  const clears = clearsOnTap(e, Date.now());
 
   if (store.settings.demo) {
     toast('Demo: this would open the email in Gmail');
@@ -142,9 +180,8 @@ function openCard(id) {
     return;
   }
   if (clears) awaitingReturn.add(id);
-  const link = gmailLink(id);
-  if (link.startsWith('http')) window.open(link, '_blank', 'noopener');
-  else window.location.href = link;
+  const kind = LINKS[store.settings.openIn] ? store.settings.openIn : OPEN_IN[store.settings.openIn] || 'app-thread';
+  openLink(LINKS[kind].url(e, store.settings));
 }
 
 function startFade(id) {
@@ -157,7 +194,7 @@ function startFade(id) {
     fading.delete(id);
     animateOut(cardEl(id), () => {
       store.clear(id);
-      api.sendEvent(store.settings, 'clear', id);
+      sync('clear', id);
       render();
       toast('Marked done', () => restore(id));
     });
@@ -171,18 +208,31 @@ document.addEventListener('visibilitychange', () => {
   awaitingReturn.clear();
   render();
 });
+window.addEventListener('online', () => { idleBanner(); flushPending(); });
+window.addEventListener('offline', idleBanner);
 
 async function refresh() {
   if (refreshing) return;
+  if (!store.isConfigured() && !store.settings.demo) { openSettings(true); return; }
   refreshing = true;
   $('#refresh-btn').classList.add('spinning');
   banner('');
+  render();
   try {
-    const res = await api.refresh(store.settings);
-    store.saveCache(res.emails, Date.now());
-    if (res.done) store.prune(res.emails.map((e) => e.id));
+    await flushPending(); // so the script already knows what you hid while offline
+    for (let i = 0; i < MAX_CHUNKS; i++) {
+      const res = await api.refresh(store.settings);
+      store.saveCache({ emails: res.emails, refreshedAt: res.refreshedAt || Date.now(), removed: res.removed || [] });
+      if (res.done) {
+        store.prune(res.emails.map((e) => e.id));
+        banner('');
+        break;
+      }
+      progressBanner(res.processed, res.total); // first run: keep going, showing progress
+      render();
+    }
   } catch (err) {
-    banner(esc(err.message), 'error');
+    banner(esc(err.message), err.kind === 'offline' ? '' : 'error');
   } finally {
     refreshing = false;
     $('#refresh-btn').classList.remove('spinning');
@@ -287,9 +337,23 @@ function openSettings(setup = false) {
   $('#f-token').value = s.token;
   $('#f-gmail').value = s.gmail;
   $('#f-demo').checked = s.demo;
-  setSeg(s.openIn);
+  $('#conn-status').textContent = '';
+  $('#conn-status').className = 'conn-status';
+  setSeg(LINKS[s.openIn] ? (s.openIn.startsWith('web') ? 'web' : 'app') : s.openIn);
   renderRecent();
+  renderLinkTest();
   $('#settings').hidden = false;
+  $('#settings').scrollTop = 0;
+}
+
+function readForm() {
+  return {
+    scriptUrl: $('#f-url').value.trim(),
+    token: $('#f-token').value.trim(),
+    gmail: $('#f-gmail').value.trim(),
+    openIn: document.querySelector('#f-openin .on')?.dataset.v || 'app',
+    demo: $('#f-demo').checked,
+  };
 }
 
 function setSeg(v) {
@@ -299,12 +363,31 @@ function setSeg(v) {
 function renderRecent() {
   const items = store.recentlyRemoved();
   $('#recent').innerHTML = items.length
-    ? items.map(({ id }) => {
-        const e = findEmail(id);
-        return `<div class="recent-item"><span>${esc(e ? `${e.from} — ${e.subject}` : id)}</span><button data-restore="${esc(id)}">Restore</button></div>`;
-      }).join('')
+    ? items.map((r) => `<div class="recent-item"><span>${esc(r.from && r.subject ? `${r.from} — ${r.subject}` : r.subject || r.id)}</span><button data-restore="${esc(r.id)}">Restore</button></div>`).join('')
     : '<div class="recent-empty">Nothing hidden.</div>';
 }
+
+// Try every link format on one real email; you report which opened the right one.
+function renderLinkTest() {
+  const emails = store.cache.emails;
+  const e = emails.find((x) => !x.code && ['action', 'important'].includes(x.section)) || emails.find((x) => !x.code) || emails[0];
+  const box = $('#linktest');
+  if (!e || store.settings.demo) {
+    box.innerHTML = '<div class="recent-empty">Refresh with your real inbox first.</div>';
+    return;
+  }
+  box.innerHTML = `<div class="lt-email">Testing with: <b>${esc(e.from)}</b> — ${esc(e.subject)}</div>` +
+    Object.entries(LINKS).map(([k, l]) => `<button class="lt-btn" data-link="${k}">${esc(l.label)}<span>›</span></button>`).join('') +
+    '<div class="lt-note">Tap each one, then come back. Tell Claude which ones opened <i>this exact email</i>.</div>';
+  box.dataset.id = e.id;
+}
+
+$('#linktest').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-link]');
+  if (!b) return;
+  const e = findEmail($('#linktest').dataset.id);
+  if (e) openLink(LINKS[b.dataset.link].url(e, { ...store.settings, ...readForm() }));
+});
 
 $('#recent').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-restore]');
@@ -312,27 +395,36 @@ $('#recent').addEventListener('click', (ev) => {
 });
 $('#f-openin').addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (b) setSeg(b.dataset.v); });
 
-$('#settings-done').addEventListener('click', () => {
-  const wasDemo = store.settings.demo;
-  store.saveSettings({
-    scriptUrl: $('#f-url').value.trim(),
-    token: $('#f-token').value.trim(),
-    gmail: $('#f-gmail').value.trim(),
-    openIn: document.querySelector('#f-openin .on')?.dataset.v || 'app',
-    demo: $('#f-demo').checked,
-  });
-  $('#settings').hidden = true;
-  if (wasDemo !== store.settings.demo) {
-    store.saveCache([], 0); // never mix demo and real emails
-    if (store.settings.demo) refresh();
+$('#test-conn').addEventListener('click', async () => {
+  const st = $('#conn-status');
+  st.className = 'conn-status';
+  st.textContent = 'Testing…';
+  try {
+    const r = await api.ping({ ...readForm(), demo: false });
+    st.className = 'conn-status ok';
+    st.textContent = `✓ Connected (script v${r.version})`;
+  } catch (err) {
+    st.className = 'conn-status bad';
+    st.textContent = err.message;
   }
-  banner('');
-  connectionBanner();
+});
+
+$('#settings-done').addEventListener('click', () => {
+  const was = { ...store.settings };
+  store.saveSettings(readForm());
+  $('#settings').hidden = true;
+  const s = store.settings;
+  const switched = was.demo !== s.demo || (!s.demo && (was.scriptUrl !== s.scriptUrl || was.token !== s.token));
+  if (switched) {
+    store.saveCache({ emails: [], refreshedAt: 0, removed: [] }); // never mix demo/real or two accounts
+    if (s.demo || store.isConfigured()) refresh();
+  }
+  idleBanner();
   render();
 });
 
 $('#reset-btn').addEventListener('click', () => {
-  if (confirm('Clear settings, hidden cards and cached emails on this phone?')) {
+  if (confirm('Clear settings, hidden cards and cached emails on this phone? (Hidden cards stay hidden in the script.)')) {
     store.resetAll();
     location.replace(location.pathname);
   }
@@ -353,12 +445,13 @@ for (const [id, ts] of Object.entries(store.state.tapped)) {
 }
 
 render();
-connectionBanner();
+idleBanner();
 if (store.settings.demo && !store.cache.emails.length) refresh();
 if (!store.isConfigured() && !store.settings.demo) openSettings(true);
 else if (params.has('settings')) openSettings(false);
 for (const id of awaitingReturn) startFade(id);
 awaitingReturn.clear();
+flushPending();
 
 setInterval(render, 30_000); // keep "x min ago", code timers and overdue state fresh
 

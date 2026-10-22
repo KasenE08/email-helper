@@ -2,7 +2,7 @@
 // Strategy: serve the app shell from cache, update the cache in the background
 // (stale-while-revalidate), so a new deploy shows up on the next launch.
 // Requests to other origins (the Apps Script) are never touched.
-const CACHE = 'eh-shell-v1';
+const CACHE = 'eh-shell-v2';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/model.js', 'js/store.js', 'js/api.js', 'js/mock-data.js',

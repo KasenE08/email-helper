@@ -14,7 +14,7 @@
  * Tweak behavior with the lists in Config.gs; tweak logic with the regexes below.
  */
 
-var RULES_VERSION = 5; // bump to force every cached thread to be re-analyzed
+var RULES_VERSION = 6; // bump to force every cached thread to be re-analyzed
 
 // ======================================================================
 // Patterns
@@ -159,6 +159,7 @@ function analyze(email, cfg) {
     unread: !!email.unread,
     replied: !!email.replied,
     toMe: email.toMe !== false,
+    msgId: email.messageId || '',
     promoLabel: labels.indexOf('CATEGORY_PROMOTIONS') >= 0 || labels.indexOf('CATEGORY_SOCIAL') >= 0,
   };
 

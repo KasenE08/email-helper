@@ -10,9 +10,11 @@
 //   cat: 'school'|'work'|'family'|'other'
 //   kind: 'reply'|'action'|null     only for the action section
 //   code: string|true|null  the code ("482913") for code emails, true for login alerts / magic links
-//   deadline: number|null ms timestamp of the nearest upcoming deadline
+//   deadline: number|null ms timestamp of the nearest upcoming deadline (as of the refresh)
 //   deadlineHasTime: bool  false when only a date was found ("Nov 1")
 //   moreDeadlines: number  how many other deadlines were found
+//   deadlines: [{ t, hasTime }]  every deadline found; the app re-picks as time passes
+//   msgId: string         RFC 822 Message-ID (for exact-email links)
 // }
 
 export const SECTIONS = [
@@ -62,11 +64,20 @@ export function refreshedLabel(t, now) {
   return h < 24 ? `Refreshed ${h} hr ago` : `Refreshed ${Math.round(h / 24)}d ago`;
 }
 
+const allDeadlines = (e) => (e.deadlines?.length ? e.deadlines : e.deadline ? [{ t: e.deadline, hasTime: e.deadlineHasTime !== false }] : []);
+
+// The deadline to show right now: the earliest one that isn't more than 24 h overdue.
+export function currentDeadline(e, now) {
+  const live = allDeadlines(e).filter((d) => d.t > now - OVERDUE_GRACE_MS).sort((a, b) => a.t - b.t);
+  return live.length ? { t: live[0].t, hasTime: live[0].hasTime !== false, more: live.length - 1 } : null;
+}
+
 // Deadline label + state. state: overdue | today | tomorrow | week | later
 export function deadlineInfo(e, now) {
-  if (!e.deadline) return null;
-  const t = e.deadline, d = new Date(t), dd = dayDiff(t, now);
-  const time = e.deadlineHasTime === false ? '' : ` ${clock(t)}`;
+  const cur = currentDeadline(e, now);
+  if (!cur) return null;
+  const t = cur.t, d = new Date(t), dd = dayDiff(t, now);
+  const time = cur.hasTime ? ` ${clock(t)}` : '';
   const md = `${MON[d.getMonth()]} ${d.getDate()}`;
   let state, label;
   if (t < now) { state = 'overdue'; label = `Overdue · ${md}`; }
@@ -74,8 +85,8 @@ export function deadlineInfo(e, now) {
   else if (dd === 1) { state = 'tomorrow'; label = `Due tomorrow${time}`; }
   else if (dd < 7) { state = 'week'; label = `Due ${WKD[d.getDay()]} ${md}`; }
   else { state = 'later'; label = `Due ${md}`; }
-  if (e.moreDeadlines) label += ` · +${e.moreDeadlines}`;
-  return { state, label, overdue: state === 'overdue' };
+  if (cur.more) label += ` · +${cur.more}`;
+  return { state, label, overdue: state === 'overdue', t };
 }
 
 // Minutes left on a verification code's 15-minute Urgent window (null if not a code).
@@ -94,13 +105,14 @@ export function effectiveSection(e, now) {
 // state: { hidden: {id: ts}, cleared: {id: ts} } (see store.js)
 export function isGone(e, state, now) {
   if (state.hidden[e.id] || state.cleared[e.id]) return true;
-  if (e.deadline && now > e.deadline + OVERDUE_GRACE_MS) return true;
+  // Had deadlines, and the last one is now more than 24 h past.
+  if (allDeadlines(e).length && !currentDeadline(e, now)) return true;
   return false;
 }
 
-// Tapping a card clears it (after the fade) only if it has no deadline.
+// Tapping a card clears it (after the fade) only if it has no live deadline.
 // Deadline cards stay until the deadline passes (or you long-press / swipe them away).
-export function clearsOnTap(e) { return !e.deadline; }
+export function clearsOnTap(e, now = Date.now()) { return !currentDeadline(e, now); }
 
 export function group(emails, state, now) {
   const visible = emails
@@ -120,9 +132,10 @@ export function counts(groups, now) {
     if (s.id === 'junk') continue;
     if (s.id === 'action') action = s.items.length;
     for (const e of s.items) {
-      if (!e.deadline) continue;
-      if (e.deadline < now) overdue++;
-      else if (e.deadline - now <= 7 * DAY) week++;
+      const d = currentDeadline(e, now);
+      if (!d) continue;
+      if (d.t < now) overdue++;
+      else if (d.t - now <= 7 * DAY) week++;
     }
   }
   return { action, week, overdue };

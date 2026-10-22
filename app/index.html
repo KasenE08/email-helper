@@ -50,6 +50,7 @@
     <label>Script URL<input id="f-url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></label>
     <label>Token<input id="f-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="your secret token"></label>
     <label><span>Gmail address <span class="opt">· for opening emails</span></span><input id="f-gmail" type="email" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="you@gmail.com"></label>
+    <div class="conn-row"><button class="secondary" id="test-conn">Test connection</button><span class="conn-status" id="conn-status"></span></div>
   </div>
 
   <div class="group">
@@ -61,6 +62,11 @@
   </div>
 
   <div class="group">
+    <div class="row-label">Test email links</div>
+    <div id="linktest"></div>
+  </div>
+
+  <div class="group">
     <div class="row-label">Recently hidden</div>
     <div id="recent"></div>
   </div>
@@ -68,7 +74,7 @@
   <div class="group">
     <button class="danger" id="reset-btn">Clear data on this phone</button>
   </div>
-  <p class="foot">Email Helper · v1</p>
+  <p class="foot">Email Helper · v2</p>
 </div>
 
 <script type="module" src="js/app.js"></script>

@@ -2,7 +2,7 @@
 
 Private, rule-based Gmail sorter: a PWA (GitHub Pages) + a Google Apps Script backend. $0, no AI.
 
-**Status:** Phase 2 done: Apps Script backend + rules engine. Phase 3 connects the app to it.
+**Status:** Phase 3 done: the app talks to the Apps Script backend. Phase 4 is polish and tuning.
 
 **Setting it up:** see [SETUP.md](SETUP.md).
 
@@ -12,7 +12,7 @@ Private, rule-based Gmail sorter: a PWA (GitHub Pages) + a Google Apps Script ba
 - `app/` — the PWA (deployed to Pages by `.github/workflows/pages.yml`)
   - `js/model.js` — sections, sorting, deadline labels, disappear rules (pure logic)
   - `js/store.js` — what's kept on the phone (settings, hidden cards, cache)
-  - `js/api.js` — Apps Script calls (stubbed until Phase 3; demo mode returns mock data)
+  - `js/api.js` — Apps Script calls (timeouts, retries, friendly errors; demo mode returns mock data)
   - `js/mock-data.js` — fake inbox for demo mode + screenshots
   - `js/app.js` — UI, gestures, settings
 - `apps-script/` — the Google Apps Script backend
@@ -23,7 +23,8 @@ Private, rule-based Gmail sorter: a PWA (GitHub Pages) + a Google Apps Script ba
   - `dist/EmailHelper.gs` — all of the above in one file, for pasting (`node tools/bundle.mjs`)
 - `tests/` — `node tests/run-rules.mjs` (rules + deadline cases), `node tests/run-backend.mjs` (whole backend with fake Gmail/Sheets)
 - `design/` — Phase 0 concepts, icons, screenshots
-- `tools/phase1-shots.mjs` — screenshots the app at iPhone size: `node tools/phase1-shots.mjs`
+- `tools/e2e.mjs` — the real app in Chromium against a local fake Apps Script running the real backend (`node tools/e2e.mjs`)
+- `tools/phase1-shots.mjs`, `tools/phase2-shots.mjs` — screenshot scripts
 
 ## Gestures
 - **Tap** a card: opens it in Gmail. Cards without a deadline fade out ~10 s after you come back.

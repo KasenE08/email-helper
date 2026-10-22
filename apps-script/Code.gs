@@ -153,7 +153,7 @@ function buildCards_(cache, state, now, cfg) {
   return items.map(function (x) {
     var f = x.f, d = x.d;
     return {
-      id: f.id, from: f.from, subject: f.subject, snippet: f.snippet, date: f.date,
+      id: f.id, msgId: f.msgId || '', from: f.from, subject: f.subject, snippet: f.snippet, date: f.date,
       section: d.section, cat: f.cat, kind: d.kind, code: f.code || null,
       deadline: d.deadline, deadlineHasTime: d.deadlineHasTime, moreDeadlines: d.moreDeadlines,
       deadlines: f.deadlines, unread: f.unread,

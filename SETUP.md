@@ -55,8 +55,11 @@ Tip: on GitHub, open a file and click the **Copy raw file** button (two squares)
 ## 7. Connect the app
 1. Open the app on your iPhone, then tap **⚙︎ Settings**.
 2. Paste the **Script URL** and the **Token**, and type your Gmail address.
-3. Turn **Demo data** off, then tap **Save** and **Refresh**.
-   The first refresh reads ~60 days of inbox in chunks and shows progress. After that, refreshes only read what changed.
+3. Tap **Test connection**. It should say **✓ Connected**. If not, the message says what to fix.
+4. Turn **Demo data** off and tap **Save**. The first refresh starts on its own: it reads ~60 days of inbox in chunks
+   and shows "Processing inbox… x/y". After that, refreshes only read what changed.
+5. Back in **Settings → Test email links**, tap each link and note which ones open *that exact email*. Tell Claude,
+   and the best one becomes the default.
 
 ---
 

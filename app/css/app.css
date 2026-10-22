@@ -135,5 +135,17 @@ input:focus { outline: none; border-color: var(--faint); }
 .recent-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .recent-item button { color: var(--accent); font-weight: 600; font-size: 14px; flex: none; }
 .recent-empty { color: var(--faint); font-size: 14px; }
+.secondary { background: var(--raise); color: var(--text); border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600; flex: none; }
+.secondary:active { background: var(--raise2); }
+.conn-row { display: flex; align-items: center; gap: 12px; }
+.conn-status { font-size: 13px; color: var(--muted); min-width: 0; }
+.conn-status.ok { color: var(--family); }
+.conn-status.bad { color: #ffb4a6; }
+.lt-email { font-size: 13px; color: var(--muted); }
+.lt-email b { color: var(--text); font-weight: 600; }
+.lt-btn { display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left; background: var(--raise); border-radius: 10px; padding: 11px 12px; font-size: 14px; }
+.lt-btn span { color: var(--faint); }
+.lt-btn:active { background: var(--raise2); }
+.lt-note { font-size: 12.5px; color: var(--faint); }
 .danger { color: var(--red); background: var(--raise); border-radius: 10px; padding: 12px; font-size: 15px; }
 .foot { color: var(--faint); font-size: 12px; text-align: center; margin-top: 28px; }

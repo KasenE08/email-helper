@@ -3,7 +3,7 @@
  * Turns each thread into the plain "email" object the rules engine expects.
  */
 
-var META_HEADERS = ['From', 'To', 'Cc', 'Subject', 'List-Unsubscribe', 'Precedence', 'Auto-Submitted'];
+var META_HEADERS = ['From', 'To', 'Cc', 'Subject', 'List-Unsubscribe', 'Precedence', 'Auto-Submitted', 'Message-ID'];
 var BODY_MAX_CHARS = 6000;
 
 /** Your own address (cached). */
@@ -74,6 +74,7 @@ function loadThread_(id, me, cfg) {
     to: to,
     toMe: to.some(function (x) { return normEmail(x) === meN; }),
     subject: header_(last, 'Subject') || header_(msgs[0], 'Subject'),
+    messageId: header_(last, 'Message-ID').replace(/^<|>$/g, ''),
     snippet: last.snippet || '',
     date: Number(last.internalDate),
     labels: Object.keys(labels),
