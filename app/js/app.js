@@ -8,11 +8,11 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 const FADE_MS = 10_000;             // tapped card fades this long after you come back
 const LONG_PRESS_MS = 500;
-const RETURN_WINDOW_MS = 30 * 60e3; // reopening the app within 30 min still fades tapped cards
 const MAX_CHUNKS = 60;              // safety cap on one refresh's scan loop
 
 const fading = new Map();           // id -> fade start (ms)
-const awaitingReturn = new Set();   // ids opened in Gmail; fade starts when the app is visible again
+const readCache = new Map();        // id -> thread from the script (for the reader)
+let readerId = null;                // email open in the reader
 let gesture = null;
 let refreshing = false;
 
@@ -152,42 +152,91 @@ function restore(id) {
   refresh();
 }
 
-// Link formats. Which ones open the exact email on iPhone is what Settings → "Test email links" checks.
-const LINKS = {
-  'app-thread': { label: 'Gmail app · thread link', url: (e) => `googlegmail:///cv=${encodeURIComponent(e.id)}/accountId=1&create-new-tab` },
-  'app-thread-plain': { label: 'Gmail app · thread link (short)', url: (e) => `googlegmail:///cv=${encodeURIComponent(e.id)}` },
-  app: { label: 'Gmail app · just open the app', url: () => 'googlegmail://' },
-  'web-thread': { label: 'Browser · thread', url: (e, s) => `https://mail.google.com/mail/u/${s.gmail ? encodeURIComponent(s.gmail) : '0'}/#all/${encodeURIComponent(e.id)}` },
-  'web-msgid': { label: 'Browser · search by Message-ID', url: (e, s) => `https://mail.google.com/mail/u/${s.gmail ? encodeURIComponent(s.gmail) : '0'}/#search/${encodeURIComponent('rfc822msgid:' + (e.msgId || ''))}` },
-};
-const OPEN_IN = { app: 'app-thread', web: 'web-thread' };
+// ---------- In-app reader ----------
+// Tapping a card opens the full email here. "Open Gmail" copies the subject and opens the
+// Gmail app (its links can't open one specific email), so you paste it into Gmail search to reply.
 
-function openLink(url) {
-  if (url.startsWith('http')) window.open(url, '_blank', 'noopener');
-  else window.location.href = url;
+const openExternal = (url) => (window.__ehOpen || ((u) => { window.location.href = u; }))(url);
+
+/** Make reader text safe HTML: escape everything, then turn ⟦url|text⟧ markers and bare URLs into links. */
+function formatBody(text) {
+  const safeUrl = (u) => /^(https?:|mailto:)/i.test(u);
+  let html = esc(text);
+  html = html.replace(/⟦([^|⟧]+)\|([^⟧]*)⟧/g, (m, url, label) => {
+    const u = url.replace(/&amp;/g, '&');
+    return safeUrl(u) ? `<a class="btnlink" href="${esc(u)}" target="_blank" rel="noopener">${label || 'link'}</a>` : label;
+  });
+  html = html.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (m, pre, url) => {
+    const u = url.replace(/&amp;/g, '&');
+    let host = u;
+    try { host = new URL(u).hostname.replace(/^www\./, ''); } catch { /* keep raw */ }
+    return `${pre}<a href="${esc(u)}" target="_blank" rel="noopener">${esc(host)}…</a>`;
+  });
+  return html;
 }
 
-function openCard(id) {
+function fullDate(t) {
+  return new Date(t).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function renderReader(e, thread, error) {
+  const now = Date.now();
+  const dl = deadlineInfo(e, now);
+  $('#r-subj').textContent = thread?.subject || e.subject;
+  $('#r-meta').innerHTML = `<span><span class="cat" style="--c:var(--${e.cat})">${CATS[e.cat] || 'Other'}</span></span>` +
+    (dl ? `<span class="due ${dl.overdue ? 'bad' : ''}">${esc(dl.label)}</span>` : '') +
+    (typeof e.code === 'string' ? `<button class="code-chip" data-copy="${esc(e.code)}">${esc(e.code)}</button>` : '');
+  const msgs = thread?.messages?.length ? thread.messages : [{ from: e.from, date: e.date, mine: false, body: e.snippet }];
+  $('#r-body').innerHTML = msgs.map((m) => `
+    <div class="msg ${m.mine ? 'mine' : ''}">
+      <div class="msg-head"><b>${esc(m.mine ? 'You' : m.from)}</b><span>${esc(fullDate(m.date))}</span></div>
+      <div class="msg-body">${formatBody(m.body || '')}</div>
+    </div>`).join('') +
+    (thread ? '' : `<div class="r-loading ${error ? 'error' : ''}">${error ? esc(error) + ' Showing the preview.' : 'Loading the full email…'}</div>`);
+}
+
+async function openCard(id) {
   const e = findEmail(id);
   if (!e) return;
   store.tap(id);
   sync('tap', id);
-  const clears = clearsOnTap(e, Date.now());
-
-  if (store.settings.demo) {
-    toast('Demo: this would open the email in Gmail');
-    if (clears) setTimeout(() => startFade(id), 800);
-    return;
+  readerId = id;
+  renderReader(e, readCache.get(id));
+  $('#reader').hidden = false;
+  $('#reader').scrollTop = 0;
+  if (readCache.has(id)) return;
+  try {
+    const thread = await api.read(store.settings, e);
+    readCache.set(id, thread);
+    if (readerId === id) renderReader(e, thread);
+  } catch (err) {
+    if (readerId === id) renderReader(e, null, err.message);
   }
-  if (clears) {
-    awaitingReturn.add(id);
-    // iOS freezes this page while Gmail is open, so this timer effectively runs once you're back.
-    // It's the main trigger: home-screen apps don't reliably fire "you're back" events.
-    setTimeout(checkReturn, 1500);
-  }
-  const kind = LINKS[store.settings.openIn] ? store.settings.openIn : OPEN_IN[store.settings.openIn] || 'app-thread';
-  openLink(LINKS[kind].url(e, store.settings));
 }
+
+/** Close the reader. Cards without a deadline then fade out (you've read them). */
+function closeReader({ fade = true } = {}) {
+  const id = readerId;
+  readerId = null;
+  $('#reader').hidden = true;
+  const e = id && findEmail(id);
+  if (fade && e && clearsOnTap(e, Date.now())) startFade(id);
+}
+
+$('#reader-back').addEventListener('click', () => closeReader());
+$('#reader-hide').addEventListener('click', () => { const id = readerId; closeReader({ fade: false }); if (id) hideCard(id); });
+$('#reader-gmail').addEventListener('click', async () => {
+  const e = findEmail(readerId);
+  const subject = (e?.subject || '').replace(/^((re|fwd?|fw)\s*:\s*)+/i, '').trim();
+  let copied = false;
+  try { await navigator.clipboard.writeText(subject); copied = true; } catch { /* not allowed: still open Gmail */ }
+  toast(copied ? 'Subject copied. Paste it into Gmail search.' : 'Opening Gmail…');
+  setTimeout(() => openExternal('googlegmail://'), copied ? 700 : 100);
+});
+$('#r-meta').addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.code-chip');
+  if (chip) navigator.clipboard?.writeText(chip.dataset.copy).then(() => toast('Code copied'), () => toast('Could not copy'));
+});
 
 function startFade(id) {
   if (fading.has(id) || store.state.hidden[id] || store.state.cleared[id]) return;
@@ -206,22 +255,11 @@ function startFade(id) {
   }, FADE_MS);
 }
 
-// Coming back from Gmail: start fading whatever was opened.
-function checkReturn() {
-  if (document.visibilityState !== 'visible' || !awaitingReturn.size) return;
-  for (const id of awaitingReturn) startFade(id);
-  awaitingReturn.clear();
-  render();
-}
-document.addEventListener('visibilitychange', checkReturn);
-window.addEventListener('pageshow', checkReturn);
-window.addEventListener('focus', checkReturn);
-
 /** Backup: anything you opened over a minute ago that never got to fade is cleared now. */
 function clearStaleTaps() {
   const now = Date.now();
   for (const [id, ts] of Object.entries(store.state.tapped)) {
-    if (store.state.cleared[id] || store.state.hidden[id] || fading.has(id) || awaitingReturn.has(id)) continue;
+    if (store.state.cleared[id] || store.state.hidden[id] || fading.has(id) || id === readerId) continue;
     const e = findEmail(id);
     if (e && clearsOnTap(e, now) && now - ts > 60e3) { store.clear(id); sync('clear', id); }
   }
@@ -358,9 +396,7 @@ function openSettings(setup = false) {
   $('#f-demo').checked = s.demo;
   $('#conn-status').textContent = '';
   $('#conn-status').className = 'conn-status';
-  setSeg(LINKS[s.openIn] ? (s.openIn.startsWith('web') ? 'web' : 'app') : s.openIn);
   renderRecent();
-  renderLinkTest();
   $('#settings').hidden = false;
   $('#settings').scrollTop = 0;
 }
@@ -370,13 +406,8 @@ function readForm() {
     scriptUrl: $('#f-url').value.trim(),
     token: $('#f-token').value.trim(),
     gmail: $('#f-gmail').value.trim(),
-    openIn: document.querySelector('#f-openin .on')?.dataset.v || 'app',
     demo: $('#f-demo').checked,
   };
-}
-
-function setSeg(v) {
-  for (const b of document.querySelectorAll('#f-openin button')) b.classList.toggle('on', b.dataset.v === v);
 }
 
 function renderRecent() {
@@ -386,33 +417,10 @@ function renderRecent() {
     : '<div class="recent-empty">Nothing hidden.</div>';
 }
 
-// Try every link format on one real email; you report which opened the right one.
-function renderLinkTest() {
-  const emails = store.cache.emails;
-  const e = emails.find((x) => !x.code && ['action', 'important'].includes(x.section)) || emails.find((x) => !x.code) || emails[0];
-  const box = $('#linktest');
-  if (!e || store.settings.demo) {
-    box.innerHTML = '<div class="recent-empty">Refresh with your real inbox first.</div>';
-    return;
-  }
-  box.innerHTML = `<div class="lt-email">Testing with: <b>${esc(e.from)}</b> — ${esc(e.subject)}</div>` +
-    Object.entries(LINKS).map(([k, l]) => `<button class="lt-btn" data-link="${k}">${esc(l.label)}<span>›</span></button>`).join('') +
-    '<div class="lt-note">Tap each one, then come back. Tell Claude which ones opened <i>this exact email</i>.</div>';
-  box.dataset.id = e.id;
-}
-
-$('#linktest').addEventListener('click', (ev) => {
-  const b = ev.target.closest('[data-link]');
-  if (!b) return;
-  const e = findEmail($('#linktest').dataset.id);
-  if (e) openLink(LINKS[b.dataset.link].url(e, { ...store.settings, ...readForm() }));
-});
-
 $('#recent').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-restore]');
   if (b) { restore(b.dataset.restore); renderRecent(); }
 });
-$('#f-openin').addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (b) setSeg(b.dataset.v); });
 
 $('#test-conn').addEventListener('click', async () => {
   const st = $('#conn-status');
@@ -457,11 +465,7 @@ $('#refresh-btn').addEventListener('click', refresh);
 const params = new URLSearchParams(location.search);
 if (params.has('demo')) store.saveSettings({ demo: true });
 
-// Tapped cards from a session iOS killed in the background still fade on reopen.
-for (const [id, ts] of Object.entries(store.state.tapped)) {
-  const e = findEmail(id);
-  if (e && clearsOnTap(e) && Date.now() - ts < RETURN_WINDOW_MS && !store.state.cleared[id]) awaitingReturn.add(id);
-}
+// Cards you opened in a session iOS killed before they faded: clear them now.
 clearStaleTaps();
 
 render();
@@ -469,8 +473,6 @@ idleBanner();
 if (store.settings.demo && !store.cache.emails.length) refresh();
 if (!store.isConfigured() && !store.settings.demo) openSettings(true);
 else if (params.has('settings')) openSettings(false);
-for (const id of awaitingReturn) startFade(id);
-awaitingReturn.clear();
 flushPending();
 
 setInterval(render, 30_000); // keep "x min ago", code timers and overdue state fresh

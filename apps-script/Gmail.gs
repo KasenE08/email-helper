@@ -100,9 +100,8 @@ function needsBody_(email, cfg) {
   return true;
 }
 
-/** Plain-text body of one message (prefers text/plain, falls back to HTML). */
-function loadBody_(messageId) {
-  var m = Gmail.Users.Messages.get('me', messageId, { format: 'full' });
+/** Collect the text/plain and text/html parts of a message payload. */
+function partsOf_(payload) {
   var plain = [], html = [];
   (function walk(part) {
     if (!part) return;
@@ -112,9 +111,45 @@ function loadBody_(messageId) {
       else if (mime === 'text/html') html.push(decodePart_(part.body.data));
     }
     (part.parts || []).forEach(walk);
-  })(m.payload);
-  var text = plain.length ? cleanText(plain.join('\n')) : htmlToText(html.join('\n'));
+  })(payload);
+  return { plain: plain.join('\n'), html: html.join('\n') };
+}
+
+/** Plain-text body of one message (prefers text/plain, falls back to HTML). For the rules. */
+function loadBody_(messageId) {
+  var p = partsOf_(Gmail.Users.Messages.get('me', messageId, { format: 'full' }).payload);
+  var text = p.plain ? cleanText(p.plain) : htmlToText(p.html);
   return text.slice(0, BODY_MAX_CHARS);
+}
+
+var READ_MAX_CHARS = 20000;
+var READ_MAX_MESSAGES = 8;
+
+/**
+ * Full thread for the in-app reader: the last few messages, newest last, quoted
+ * replies trimmed. HTML is preferred here (it keeps links); plain text is the fallback.
+ */
+function readThread_(id) {
+  var me = normEmail(myEmail_());
+  var t = Gmail.Users.Threads.get('me', id, { format: 'full' });
+  var msgs = (t.messages || []).slice(-READ_MAX_MESSAGES);
+  return {
+    id: t.id,
+    subject: cleanText(header_(msgs[msgs.length - 1] || {}, 'Subject')),
+    messages: msgs.map(function (m) {
+      var from = parseAddress_(header_(m, 'From'));
+      var p = partsOf_(m.payload);
+      var body = p.html ? htmlToReadable(p.html) : textToReadable(p.plain);
+      if (!body) body = cleanText(m.snippet);
+      return {
+        from: from.name || from.email,
+        fromEmail: from.email,
+        mine: (m.labelIds || []).indexOf('SENT') >= 0 || normEmail(from.email) === me,
+        date: Number(m.internalDate),
+        body: stripQuoted('\n' + body).trim().slice(0, READ_MAX_CHARS),
+      };
+    }),
+  };
 }
 
 /** The Advanced service may hand back base64url text or raw bytes. */

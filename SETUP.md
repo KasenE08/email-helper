@@ -68,8 +68,8 @@ Config.gs         ← your private config
 3. Tap **Test connection**. It should say **✓ Connected**. If not, the message says what to fix.
 4. Turn **Demo data** off and tap **Save**. The first refresh starts on its own: it reads ~60 days of inbox in chunks
    and shows "Processing inbox… x/y". After that, refreshes only read what changed.
-5. Back in **Settings → Test email links**, tap each link and note which ones open *that exact email*. Tell Claude,
-   and the best one becomes the default.
+5. Tap any card to read the full email in the app. **Open Gmail** copies the subject and opens the Gmail app,
+   so you can paste it into Gmail search when you need to reply.
 
 ---
 

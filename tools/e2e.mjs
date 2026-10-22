@@ -100,26 +100,39 @@ check(!(await page.locator('.item[data-id="s22"]').count()), 'long-press hides t
 await page.waitForTimeout(500);
 check(serverState().removed.includes('s22'), 'hide was sent to the script');
 
-// 4. Tap a no-deadline card -> opens Gmail link -> fades 10 s after returning -> "clear" sent
-await page.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); }; });
-await page.evaluate(() => { document.querySelector('#settings-btn'); }); // no-op
-// app links use location.href for googlegmail:// — capture by swapping openIn to browser mode for the test
-await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('eh.settings')); s.openIn = 'web'; localStorage.setItem('eh.settings', JSON.stringify(s)); });
-await page.reload();
-await page.evaluate(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); }; });
+// 4. Tap a no-deadline card -> in-app reader with the full email -> close -> fades 10 s later -> "clear" sent
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+await page.evaluate(() => { window.__opened = []; window.__ehOpen = (u) => window.__opened.push(u); });
+fake.gmailThreads.get('s05').messages[0]._html = '<p>Grandma wants to know which day.</p><p>Can you check your <a href="https://example.com/schedule?a=1&amp;b=2">work schedule</a>?</p>';
 const momSel = 'section.action .item[data-id="s05"]';
-const c = await center(momSel);
+let c = await center(momSel);
 await page.mouse.click(c.x, c.y);
-const opened = await page.evaluate(() => window.__opened);
-check(opened[0]?.includes('mail.google.com/mail/u/kasen.test%40gmail.com/#all/s05'), 'tap opens the Gmail link for that thread');
-// No "came back" event on purpose: iOS home-screen apps don't reliably send one.
-await page.waitForTimeout(4000);
-check(await page.locator(momSel + '.clearing').count() === 1, 'after returning, the card shows the 10-second clearing line');
-await shot('5-tapped-clearing');
+await page.waitForSelector('#reader:not([hidden]) .msg-body a.btnlink', { timeout: 8000 });
+check((await page.locator('#r-body').innerText()).includes('Grandma wants to know which day.'), 'tap opens the in-app reader with the full email');
+check(await page.locator('#r-body a.btnlink[href="https://example.com/schedule?a=1&b=2"]').count() === 1, 'links in the email are tappable');
+await shot('5-reader');
+await page.click('#reader-gmail');
+await page.waitForTimeout(900);
+check((await page.evaluate(() => navigator.clipboard.readText())) === 'Thanksgiving plans' && (await page.evaluate(() => window.__opened))[0] === 'googlegmail://', '"Open Gmail" copies the subject and opens the Gmail app');
+await shot('6-open-gmail-copied');
+await page.click('#reader-back');
+await page.waitForTimeout(3000);
+check(await page.locator(momSel + '.clearing').count() === 1, 'after closing the reader, the card shows the 10-second clearing line');
+await shot('7-closed-reader-clearing');
 await page.waitForTimeout(8000);
 check(!(await page.locator(momSel).count()), 'card gone after ~10 s');
 await page.waitForTimeout(300);
 check(serverState().removed.includes('s05'), '"clear" was sent to the script');
+
+// Reader "Hide" button
+c = await center('section.action .item[data-id="s09"]');
+await page.mouse.click(c.x, c.y);
+await page.waitForSelector('#reader:not([hidden])');
+await page.click('#reader-hide');
+await page.waitForTimeout(500);
+check(!(await page.locator('.item[data-id="s09"]').count()) && (await page.locator('#toast').innerText()).includes('Hidden'), 'Hide in the reader hides the card (with Undo)');
+await page.click('#toast-undo');
+await page.waitForTimeout(300);
 
 // Backup path: a card opened over a minute ago that never faded is cleared on the next refresh
 await page.evaluate(() => { const st = JSON.parse(localStorage.getItem('eh.state')); st.tapped.s27 = Date.now() - 40 * 60e3; localStorage.setItem('eh.state', JSON.stringify(st)); });
@@ -138,7 +151,7 @@ check(!(await page.locator('.item[data-id="s22"]').count()) && !(await page.loca
 await page.click('#settings-btn');
 const recent = await page.locator('#recent').innerText();
 check(recent.includes('Credential has been previewed') && recent.includes('Thanksgiving'), '"Recently hidden" is restored from the script');
-await shot('6-recently-hidden-from-script');
+await shot('8-recently-hidden-from-script');
 // Restore one
 await page.click('#recent [data-restore="s22"]');
 await page.click('#settings-done');
@@ -146,20 +159,13 @@ await page.waitForSelector('.item[data-id="s22"]', { timeout: 10000 }).catch(() 
 await page.waitForTimeout(300);
 check(await page.locator('.item[data-id="s22"]').count() === 1 && !serverState().removed.includes('s22'), 'Restore brings the card back (here and in the script)');
 
-// 6. Link tester
-await page.click('#settings-btn');
-await page.locator('#linktest').scrollIntoViewIfNeeded();
-check(await page.locator('#linktest .lt-btn').count() === 5, 'Settings shows 5 link formats to test');
-await shot('7-link-tester');
-await page.click('#settings-done');
-
 // 7. Error states
 await ctx.setOffline(true);
 await page.click('#refresh-btn');
 await page.waitForFunction(() => !document.querySelector('#banner').hidden);
 check((await bannerText()).includes('No internet'), 'offline: friendly message, saved emails still shown');
 check(await page.locator('.item').count() > 5, 'offline: cards still visible');
-await shot('8-offline');
+await shot('9-offline');
 // Hide while offline -> queued -> sent when back online
 await longPress('section.important .item[data-id="s22"]');
 check((await page.evaluate(() => JSON.parse(localStorage.getItem('eh.pending') || '[]'))).some((p) => p.id === 's22'), 'offline hide is queued');
@@ -172,13 +178,13 @@ mode = 'html';
 await page.click('#refresh-btn');
 await page.waitForFunction(() => document.querySelector('#banner').classList.contains('error'));
 check((await bannerText()).includes('"Anyone"'), 'script not public: explains the "Anyone" setting');
-await shot('9-not-public');
+await shot('10-not-public');
 
 mode = 'slow';
 await page.click('#refresh-btn');
 await page.waitForFunction(() => (document.querySelector('#banner').innerText || '').includes('too long'), null, { timeout: 10000 });
 check(true, 'script timeout: "took too long… picks up where it left off"');
-await shot('10-timeout');
+await shot('11-timeout');
 
 mode = 'normal';
 await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('eh.settings')); s.token = 'stale'; localStorage.setItem('eh.settings', JSON.stringify(s)); });
@@ -186,7 +192,7 @@ await page.reload();
 await page.click('#refresh-btn');
 await page.waitForFunction(() => document.querySelector('#banner').classList.contains('error'));
 check((await bannerText()).includes('Wrong token'), 'bad token: explains how to fix');
-await shot('11-bad-token');
+await shot('12-bad-token');
 
 check(!errors.length, 'no JavaScript errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
 console.log(failures ? `\n${failures} FAILED` : '\nAll end-to-end checks passed');

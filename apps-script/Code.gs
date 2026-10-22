@@ -9,12 +9,13 @@
  *   ?action=refresh                 -> { ok, done, processed, total, emails: [...], removed: [...] }
  *                                      done=false: first-run scan still going, call again.
  *   ?action=hide|clear|tap|restore&id=<threadId>   -> { ok }
+ *   ?action=read&id=<threadId>      -> { ok, thread: { id, subject, messages: [{ from, date, mine, body }] } }
  *   ?action=rescan                  -> forget the cache, re-read everything on next refresh
  *
  * Errors come back as { ok: false, error: 'bad-token' | 'busy' | 'server', message }.
  */
 
-var APP_VERSION = 1;
+var APP_VERSION = 2;
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
@@ -24,6 +25,9 @@ function doGet(e) {
       case 'ping': return json_({ ok: true, version: APP_VERSION, rules: RULES_VERSION });
       case 'refresh': return json_(refresh_());
       case 'hide': case 'clear': case 'tap': case 'restore': return json_(setState_(p.action, p.id));
+      case 'read':
+        if (!p.id || !/^[A-Za-z0-9_-]{2,40}$/.test(p.id)) return json_({ ok: false, error: 'bad-id' });
+        return json_({ ok: true, thread: readThread_(p.id) });
       case 'rescan': resetCache_(); return json_({ ok: true });
       default: return json_({ ok: false, error: 'unknown-action' });
     }
@@ -65,6 +69,7 @@ function refresh_() {
     var queue = loadQueue_();
     var total = Number(props.getProperty('QUEUE_TOTAL') || 0);
 
+    var dirty = queue.length > 0;
     if (!queue.length) {
       // New pass: queue threads that are new or changed (labels/read state/new replies all bump historyId).
       var sig = configSig_(cfg);
@@ -75,7 +80,8 @@ function refresh_() {
         var c = cache[t.id];
         if (full || !c || c.h !== t.historyId || (c.f && c.f.v !== RULES_VERSION)) queue.push(t.id);
       });
-      Object.keys(cache).forEach(function (id) { if (!inWindow[id]) delete cache[id]; });
+      Object.keys(cache).forEach(function (id) { if (!inWindow[id]) { delete cache[id]; dirty = true; } });
+      if (queue.length) dirty = true;
       total = queue.length;
       props.setProperty('QUEUE_TOTAL', String(total));
       props.setProperty('SIG', sig);
@@ -94,8 +100,11 @@ function refresh_() {
       queue.shift();
     }
 
-    saveThreads_(cache);
-    saveQueue_(queue);
+    // Nothing new or changed: skip the (slow) sheet writes.
+    if (dirty) {
+      saveThreads_(cache);
+      saveQueue_(queue);
+    }
 
     var state = loadState_();
     if (!queue.length) pruneState_(state, cache);

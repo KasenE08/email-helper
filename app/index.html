@@ -54,16 +54,7 @@
   </div>
 
   <div class="group">
-    <div class="row-label">Open emails in</div>
-    <div class="seg" id="f-openin">
-      <button data-v="app">Gmail app</button><button data-v="web">Browser</button>
-    </div>
     <label class="switch-row">Demo data<input type="checkbox" id="f-demo"><span class="switch"></span></label>
-  </div>
-
-  <div class="group">
-    <div class="row-label">Test email links</div>
-    <div id="linktest"></div>
   </div>
 
   <div class="group">
@@ -74,7 +65,20 @@
   <div class="group">
     <button class="danger" id="reset-btn">Clear data on this phone</button>
   </div>
-  <p class="foot">Email Helper · v3</p>
+  <p class="foot">Email Helper · v4</p>
+</div>
+
+<div class="sheet reader" id="reader" hidden>
+  <div class="reader-bar">
+    <button class="text-btn back" id="reader-back">‹ Inbox</button>
+    <div class="reader-actions">
+      <button class="secondary" id="reader-hide">Hide</button>
+      <button class="primary" id="reader-gmail">Open Gmail</button>
+    </div>
+  </div>
+  <h2 class="r-subj" id="r-subj"></h2>
+  <div class="r-meta" id="r-meta"></div>
+  <div id="r-body"></div>
 </div>
 
 <script type="module" src="js/app.js"></script>

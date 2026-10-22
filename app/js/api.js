@@ -4,6 +4,7 @@
 //   ?token=…&action=ping                       -> { ok, version }
 //   ?token=…&action=refresh                    -> { ok, done, processed, total, refreshedAt, emails, removed }
 //   ?token=…&action=hide|clear|tap|restore&id= -> { ok }
+//   ?token=…&action=read&id=                   -> { ok, thread: { subject, messages: [{ from, date, mine, body }] } }
 // done=false means the first-run scan is still going; call refresh again.
 
 import { makeMock } from './mock-data.js';
@@ -69,6 +70,16 @@ export async function refresh(settings) {
       await new Promise((r) => setTimeout(r, 4000));
     }
   }
+}
+
+/** Full thread text for the in-app reader. */
+export async function read(settings, email) {
+  if (settings.demo) {
+    await new Promise((r) => setTimeout(r, 400));
+    return { id: email.id, subject: email.subject, messages: [{ from: email.from, date: email.date, mine: false,
+      body: `${email.snippet}\n\nThis is demo text standing in for the full email. In the real app you see the whole message here, with links you can tap:\n\n⟦https://example.com/demo|Open the link from this email⟧\n\nThanks,\n${email.from}` }] };
+  }
+  return (await call(settings, 'read', { id: email.id }, 30_000)).thread;
 }
 
 /** hide | clear | tap | restore. Throws on failure (caller queues it for later). */

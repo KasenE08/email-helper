@@ -19,12 +19,13 @@
  *   ?action=refresh                 -> { ok, done, processed, total, emails: [...], removed: [...] }
  *                                      done=false: first-run scan still going, call again.
  *   ?action=hide|clear|tap|restore&id=<threadId>   -> { ok }
+ *   ?action=read&id=<threadId>      -> { ok, thread: { id, subject, messages: [{ from, date, mine, body }] } }
  *   ?action=rescan                  -> forget the cache, re-read everything on next refresh
  *
  * Errors come back as { ok: false, error: 'bad-token' | 'busy' | 'server', message }.
  */
 
-var APP_VERSION = 1;
+var APP_VERSION = 2;
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
@@ -34,6 +35,9 @@ function doGet(e) {
       case 'ping': return json_({ ok: true, version: APP_VERSION, rules: RULES_VERSION });
       case 'refresh': return json_(refresh_());
       case 'hide': case 'clear': case 'tap': case 'restore': return json_(setState_(p.action, p.id));
+      case 'read':
+        if (!p.id || !/^[A-Za-z0-9_-]{2,40}$/.test(p.id)) return json_({ ok: false, error: 'bad-id' });
+        return json_({ ok: true, thread: readThread_(p.id) });
       case 'rescan': resetCache_(); return json_({ ok: true });
       default: return json_({ ok: false, error: 'unknown-action' });
     }
@@ -75,6 +79,7 @@ function refresh_() {
     var queue = loadQueue_();
     var total = Number(props.getProperty('QUEUE_TOTAL') || 0);
 
+    var dirty = queue.length > 0;
     if (!queue.length) {
       // New pass: queue threads that are new or changed (labels/read state/new replies all bump historyId).
       var sig = configSig_(cfg);
@@ -85,7 +90,8 @@ function refresh_() {
         var c = cache[t.id];
         if (full || !c || c.h !== t.historyId || (c.f && c.f.v !== RULES_VERSION)) queue.push(t.id);
       });
-      Object.keys(cache).forEach(function (id) { if (!inWindow[id]) delete cache[id]; });
+      Object.keys(cache).forEach(function (id) { if (!inWindow[id]) { delete cache[id]; dirty = true; } });
+      if (queue.length) dirty = true;
       total = queue.length;
       props.setProperty('QUEUE_TOTAL', String(total));
       props.setProperty('SIG', sig);
@@ -104,8 +110,11 @@ function refresh_() {
       queue.shift();
     }
 
-    saveThreads_(cache);
-    saveQueue_(queue);
+    // Nothing new or changed: skip the (slow) sheet writes.
+    if (dirty) {
+      saveThreads_(cache);
+      saveQueue_(queue);
+    }
 
     var state = loadState_();
     if (!queue.length) pruneState_(state, cache);
@@ -338,6 +347,39 @@ function htmlToText(html) {
     .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table)>/gi, '\n')
     .replace(/<[^>]+>/g, ' '));
+}
+
+/**
+ * Text for the in-app reader: keeps paragraphs, and keeps links as ⟦url|text⟧ markers
+ * (the app turns those into tappable links). Never returns HTML.
+ */
+function htmlToReadable(html) {
+  var s = String(html || '')
+    .replace(/<(style|script|head|title)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<a\b[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, function (m, url, inner) {
+      url = url.replace(/&amp;/g, '&').trim();
+      if (!/^(https?:|mailto:)/i.test(url)) return inner;
+      var text = inner.replace(/<[^>]+>/g, ' ').replace(/[\[\]|⟦⟧]/g, ' ').replace(/\s+/g, ' ').trim();
+      return '⟦' + url.replace(/[|⟧\s]/g, encodeURIComponent) + '|' + (text || 'link') + '⟧';
+    })
+    .replace(/<li\b[^>]*>/gi, '\n• ')
+    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ');
+  return textToReadable(s);
+}
+
+/** Clean plain text for the reader without losing paragraph breaks. */
+function textToReadable(text) {
+  var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n').map(function (l) { return cleanText(l); });
+  var out = [], blank = 0;
+  lines.forEach(function (l) {
+    if (!l) { blank++; return; }
+    if (out.length && blank) out.push('');
+    blank = 0;
+    out.push(l);
+  });
+  return out.join('\n');
 }
 
 /** Cut quoted replies ("On Mon, X wrote:") so old text doesn't count. Forwards are kept. */
@@ -705,7 +747,7 @@ function extractDeadlines(text, sentMs) {
 
 // Node export for tests (ignored inside Apps Script).
 if (typeof module !== 'undefined') {
-  module.exports = { analyze: analyze, decide: decide, classify: classify, isLive: isLive, extractDeadlines: extractDeadlines, cleanText: cleanText, htmlToText: htmlToText, summarize: summarize, normEmail: normEmail };
+  module.exports = { analyze: analyze, decide: decide, classify: classify, isLive: isLive, extractDeadlines: extractDeadlines, cleanText: cleanText, htmlToText: htmlToText, htmlToReadable: htmlToReadable, summarize: summarize, normEmail: normEmail };
 }
 
 // ======================================================================
@@ -814,9 +856,8 @@ function needsBody_(email, cfg) {
   return true;
 }
 
-/** Plain-text body of one message (prefers text/plain, falls back to HTML). */
-function loadBody_(messageId) {
-  var m = Gmail.Users.Messages.get('me', messageId, { format: 'full' });
+/** Collect the text/plain and text/html parts of a message payload. */
+function partsOf_(payload) {
   var plain = [], html = [];
   (function walk(part) {
     if (!part) return;
@@ -826,9 +867,45 @@ function loadBody_(messageId) {
       else if (mime === 'text/html') html.push(decodePart_(part.body.data));
     }
     (part.parts || []).forEach(walk);
-  })(m.payload);
-  var text = plain.length ? cleanText(plain.join('\n')) : htmlToText(html.join('\n'));
+  })(payload);
+  return { plain: plain.join('\n'), html: html.join('\n') };
+}
+
+/** Plain-text body of one message (prefers text/plain, falls back to HTML). For the rules. */
+function loadBody_(messageId) {
+  var p = partsOf_(Gmail.Users.Messages.get('me', messageId, { format: 'full' }).payload);
+  var text = p.plain ? cleanText(p.plain) : htmlToText(p.html);
   return text.slice(0, BODY_MAX_CHARS);
+}
+
+var READ_MAX_CHARS = 20000;
+var READ_MAX_MESSAGES = 8;
+
+/**
+ * Full thread for the in-app reader: the last few messages, newest last, quoted
+ * replies trimmed. HTML is preferred here (it keeps links); plain text is the fallback.
+ */
+function readThread_(id) {
+  var me = normEmail(myEmail_());
+  var t = Gmail.Users.Threads.get('me', id, { format: 'full' });
+  var msgs = (t.messages || []).slice(-READ_MAX_MESSAGES);
+  return {
+    id: t.id,
+    subject: cleanText(header_(msgs[msgs.length - 1] || {}, 'Subject')),
+    messages: msgs.map(function (m) {
+      var from = parseAddress_(header_(m, 'From'));
+      var p = partsOf_(m.payload);
+      var body = p.html ? htmlToReadable(p.html) : textToReadable(p.plain);
+      if (!body) body = cleanText(m.snippet);
+      return {
+        from: from.name || from.email,
+        fromEmail: from.email,
+        mine: (m.labelIds || []).indexOf('SENT') >= 0 || normEmail(from.email) === me,
+        date: Number(m.internalDate),
+        body: stripQuoted('\n' + body).trim().slice(0, READ_MAX_CHARS),
+      };
+    }),
+  };
 }
 
 /** The Advanced service may hand back base64url text or raw bytes. */

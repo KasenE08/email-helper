@@ -12,7 +12,7 @@ function write(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode / full: ignore */ }
 }
 
-const DEFAULT_SETTINGS = { scriptUrl: '', token: '', gmail: '', openIn: 'app', demo: false };
+const DEFAULT_SETTINGS = { scriptUrl: '', token: '', gmail: '', demo: false };
 const DEFAULT_STATE = { hidden: {}, cleared: {}, tapped: {}, collapsed: { junk: true } };
 const DEFAULT_CACHE = { emails: [], refreshedAt: 0, removed: [] };
 

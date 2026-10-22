@@ -27,6 +27,6 @@ Private, rule-based Gmail sorter: a PWA (GitHub Pages) + a Google Apps Script ba
 - `tools/phase1-shots.mjs`, `tools/phase2-shots.mjs` — screenshot scripts
 
 ## Gestures
-- **Tap** a card: opens it in Gmail. Cards without a deadline fade out ~10 s after you come back.
+- **Tap** a card: reads the full email in the app (links are tappable). **Open Gmail** copies the subject and opens the Gmail app so you can search for it and reply. (The Gmail iPhone app has no link that opens one specific email.) Cards without a deadline fade out ~10 s after you close the reader.
 - **Hold** or **swipe** a card: hides it now. Undo appears for 5 s; Settings → Recently hidden restores older ones.
 - Tap a verification code chip to copy it.

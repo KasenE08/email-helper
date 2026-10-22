@@ -16,7 +16,8 @@ if (process.env.TZ !== 'America/Chicago') {
 let failures = 0;
 const check = (ok, msg) => { console.log((ok ? '✓ ' : '✗ ') + msg); if (!ok) failures++; };
 
-const { ctx, call, gmailThreads, props, clock, addThread, at, samples, ME, nextHist } = createFakeScript();
+const fake = createFakeScript();
+const { ctx, call, gmailThreads, props, clock, addThread, at, samples, ME, nextHist } = fake;
 
 // ---------- tests ----------
 check(call({ action: 'ping', token: 'nope' }).error === 'bad-token', 'rejects a request before setup (no token yet)');
@@ -86,6 +87,30 @@ call({ action: 'restore', id: 's09', token: TOKEN });
 r = call({ action: 'refresh', token: TOKEN });
 check(r.emails.some((e) => e.id === 's09'), 'restore brings it back');
 check(call({ action: 'hide', id: '../../etc', token: TOKEN }).error === 'bad-id', 'rejects a malformed id');
+
+// In-app reader
+addThread({ id: 'h01', from: 'Valvoline Hiring', fromEmail: 'olivia.alerts@paradox.ai', subject: 'Please complete your form', snippet: 'Please complete your form.',
+  html: '<html><head><style>p{color:red}</style></head><body><p>Hi Kasen!</p><p>Please complete your <b>address</b> form &amp; ID check:</p><p><a href="https://oli.vi/AbC?x=1&amp;y=2">Complete form</a></p><ul><li>Takes 2 minutes</li></ul><script>alert(1)</script></body></html>',
+  body: '', date: at('2026-10-22 09:00'), labels: ['INBOX'], unread: true, toMe: true, listUnsubscribe: true });
+let rd = call({ action: 'read', id: 'h01', token: TOKEN });
+const hb = rd.thread?.messages?.[0]?.body || '';
+check(rd.ok && rd.thread.subject === 'Please complete your form', 'read returns the thread');
+check(hb.includes('⟦https://oli.vi/AbC?x=1&y=2|Complete form⟧'), 'reader keeps links (as markers the app turns into buttons)');
+check(hb.includes('Hi Kasen!\n') && hb.includes('• Takes 2 minutes') && hb.includes('address form & ID check'), 'reader keeps paragraphs, bullets and decodes &amp;');
+check(!/<|alert\(|color:red/.test(hb), 'reader output has no HTML, scripts or styles');
+const mom2 = gmailThreads.get('s05');
+mom2.messages[0]._body = 'Can you check your schedule?\n\nOn Tue, Oct 20, 2026 at 9:00 AM Kasen <x@y.com> wrote:\n> old quoted text';
+rd = call({ action: 'read', id: 's05', token: TOKEN });
+check(rd.thread.messages.length === 2 && rd.thread.messages[1].mine, 'reader shows the whole thread, marking my replies');
+check(!rd.thread.messages[0].body.includes('old quoted text'), 'reader trims quoted replies');
+check(call({ action: 'read', id: '../x', token: TOKEN }).error === 'bad-id', 'read rejects a malformed id');
+check(call({ action: 'read', id: 'h01' }).error === 'bad-token', 'read needs the token');
+
+// Speed: an unchanged refresh doesn't rewrite the data sheet
+r = call({ action: 'refresh', token: TOKEN }); while (!r.done) r = call({ action: 'refresh', token: TOKEN });
+const writesBefore = fake.sheetWrites();
+r = call({ action: 'refresh', token: TOKEN });
+check(r.total === 0 && fake.sheetWrites() === writesBefore, 'unchanged refresh skips the sheet writes (faster)');
 
 // Config change -> full re-analyze
 vm.runInContext("CONFIG.URGENT_HOURS = 72;", ctx);

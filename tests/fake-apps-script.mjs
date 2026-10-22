@@ -11,6 +11,7 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'apps-script');
 
 export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com' } = {}) {
   const ME = me;
+  const writes = { n: 0 };
   // ---------- fakes ----------
   const clock = { t: 0 };
   const props = new Map();
@@ -25,7 +26,7 @@ export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com'
         getValues: () => (ss.get(name) || []).slice(r - 1, r - 1 + nr).map((row) => row.slice(c - 1, c - 1 + nc)),
         setValues: (rows) => { if (rows.length !== nr || rows.some((x) => x.length !== nc)) throw new Error('setValues size mismatch'); ss.set(name, rows.map((x) => x.map((v) => (typeof v === 'string' && v.length > 50000 ? (() => { throw new Error('cell > 50k chars'); })() : v)))); },
       }),
-      clearContents: () => ss.set(name, []),
+      clearContents: () => { writes.n++; ss.set(name, []); },
       setName: (n) => { ss.set(n, ss.get(name) || []); ss.delete(name); name = n; },
     };
   }
@@ -63,7 +64,14 @@ export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com'
         getProfile: () => ({ emailAddress: ME }),
         Threads: {
           list: () => ({ threads: [...gmailThreads.values()].map((t) => ({ id: t.id, historyId: t.historyId })) }),
-          get: (_, id) => { clock.t += 1000; const t = gmailThreads.get(id); if (!t) throw new Error('Not Found'); return JSON.parse(JSON.stringify(t)); },
+          get: (_, id, opts = {}) => {
+            clock.t += 1000;
+            const t = gmailThreads.get(id);
+            if (!t) throw new Error('Not Found');
+            const copy = JSON.parse(JSON.stringify(t));
+            if (opts.format === 'full') copy.messages.forEach((m) => { m.payload.mimeType = 'multipart/alternative'; m.payload.parts = m._html ? [{ mimeType: 'text/html', body: { data: b64url(m._html) } }] : [{ mimeType: 'text/plain', body: { data: b64url(m._body || '') } }]; });
+            return copy;
+          },
         },
         Messages: {
           get: (_, mid) => {
@@ -97,7 +105,7 @@ export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com'
       { name: 'Message-ID', value: `<${e.id}@mail.example.com>` },
     ];
     if (e.listUnsubscribe) headers.push({ name: 'List-Unsubscribe', value: '<mailto:u@x.com>' });
-    const messages = [{ id: e.id + 'm1', labelIds: labels, snippet: e.snippet, internalDate: String(e.date), payload: { headers }, _body: e.body }];
+    const messages = [{ id: e.id + 'm1', labelIds: labels, snippet: e.snippet, internalDate: String(e.date), payload: { headers }, _body: e.body, _html: e.html }];
     if (e.replied) messages.push({ id: e.id + 'm2', labelIds: ['SENT'], snippet: 'ok!', internalDate: String(e.date + 60e3), payload: { headers: [{ name: 'From', value: ME }, { name: 'Subject', value: 'Re: ' + e.subject }] } });
     gmailThreads.set(e.id, { id: e.id, historyId: String(hist++), messages, ...extra });
   }
@@ -117,5 +125,5 @@ export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com'
 
   const call = (params) => JSON.parse(vm.runInContext(`doGet(${JSON.stringify({ parameter: params })}).content`, ctx));
     const nextHist = () => String(hist++);
-    return { ctx, call, gmailThreads, props, clock, addThread, at, samples, ME, nextHist };
+    return { ctx, call, gmailThreads, props, clock, addThread, at, samples, ME, nextHist, sheetWrites: () => writes.n };
 }

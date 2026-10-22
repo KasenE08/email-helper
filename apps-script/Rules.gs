@@ -78,6 +78,39 @@ function htmlToText(html) {
     .replace(/<[^>]+>/g, ' '));
 }
 
+/**
+ * Text for the in-app reader: keeps paragraphs, and keeps links as ⟦url|text⟧ markers
+ * (the app turns those into tappable links). Never returns HTML.
+ */
+function htmlToReadable(html) {
+  var s = String(html || '')
+    .replace(/<(style|script|head|title)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<a\b[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, function (m, url, inner) {
+      url = url.replace(/&amp;/g, '&').trim();
+      if (!/^(https?:|mailto:)/i.test(url)) return inner;
+      var text = inner.replace(/<[^>]+>/g, ' ').replace(/[\[\]|⟦⟧]/g, ' ').replace(/\s+/g, ' ').trim();
+      return '⟦' + url.replace(/[|⟧\s]/g, encodeURIComponent) + '|' + (text || 'link') + '⟧';
+    })
+    .replace(/<li\b[^>]*>/gi, '\n• ')
+    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table|blockquote)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ');
+  return textToReadable(s);
+}
+
+/** Clean plain text for the reader without losing paragraph breaks. */
+function textToReadable(text) {
+  var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n').map(function (l) { return cleanText(l); });
+  var out = [], blank = 0;
+  lines.forEach(function (l) {
+    if (!l) { blank++; return; }
+    if (out.length && blank) out.push('');
+    blank = 0;
+    out.push(l);
+  });
+  return out.join('\n');
+}
+
 /** Cut quoted replies ("On Mon, X wrote:") so old text doesn't count. Forwards are kept. */
 function stripQuoted(body) {
   var cut = String(body || '').search(/\n\s*On .{0,160}wrote:|\n-{2,}\s*Original Message|\nFrom: .*\nSent: /i);
@@ -443,5 +476,5 @@ function extractDeadlines(text, sentMs) {
 
 // Node export for tests (ignored inside Apps Script).
 if (typeof module !== 'undefined') {
-  module.exports = { analyze: analyze, decide: decide, classify: classify, isLive: isLive, extractDeadlines: extractDeadlines, cleanText: cleanText, htmlToText: htmlToText, summarize: summarize, normEmail: normEmail };
+  module.exports = { analyze: analyze, decide: decide, classify: classify, isLive: isLive, extractDeadlines: extractDeadlines, cleanText: cleanText, htmlToText: htmlToText, htmlToReadable: htmlToReadable, summarize: summarize, normEmail: normEmail };
 }
