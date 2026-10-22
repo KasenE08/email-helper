@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Email Helper</title>
+<meta name="theme-color" content="#0e0e10">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Email">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div>
+      <h1>Inbox</h1>
+      <div class="sub" id="refreshed"></div>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="refresh-btn" aria-label="Refresh">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+      </button>
+      <button class="icon-btn" id="settings-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="counts" id="counts"></div>
+  <div class="banner" id="banner" hidden></div>
+  <main id="list"></main>
+  <p class="hint" id="hint">Hold or swipe a card to hide it.</p>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-msg"></span><button id="toast-undo">Undo</button></div>
+
+<div class="sheet" id="settings" hidden>
+  <div class="sheet-head">
+    <h2 id="settings-title">Settings</h2>
+    <button class="text-btn" id="settings-done">Done</button>
+  </div>
+  <p class="intro" id="settings-intro" hidden>Paste the web app URL and secret token from your Apps Script (see SETUP.md). You only do this once.</p>
+
+  <div class="group">
+    <label>Script URL<input id="f-url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label>Token<input id="f-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="your secret token"></label>
+    <label><span>Gmail address <span class="opt">· for opening emails</span></span><input id="f-gmail" type="email" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="you@gmail.com"></label>
+  </div>
+
+  <div class="group">
+    <div class="row-label">Open emails in</div>
+    <div class="seg" id="f-openin">
+      <button data-v="app">Gmail app</button><button data-v="web">Browser</button>
+    </div>
+    <label class="switch-row">Demo data<input type="checkbox" id="f-demo"><span class="switch"></span></label>
+  </div>
+
+  <div class="group">
+    <div class="row-label">Recently hidden</div>
+    <div id="recent"></div>
+  </div>
+
+  <div class="group">
+    <button class="danger" id="reset-btn">Clear data on this phone</button>
+  </div>
+  <p class="foot">Email Helper · v1</p>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
