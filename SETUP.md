@@ -64,7 +64,7 @@ Config.gs         ← your private config
 
 ## 7. Connect the app
 1. Open the app on your iPhone, then tap **⚙︎ Settings**.
-2. Paste the **Script URL** and the **Token**, and type your Gmail address.
+2. Paste the **Script URL** and the **Token**.
 3. Tap **Test connection**. It should say **✓ Connected**. If not, the message says what to fix.
 4. Turn **Demo data** off and tap **Save**. The first refresh starts on its own: it reads ~60 days of inbox in chunks
    and shows "Processing inbox… x/y". After that, refreshes only read what changed.
@@ -80,9 +80,13 @@ When the code changes, paste the new `EmailHelper.gs` into `Code.gs`, save, then
 
 The URL stays the same. If you skip this, the app keeps running the old version.
 
-## Changing your lists
-Edit `Config.gs` in Apps Script (family, counselor, whitelist, junk senders…), save, then **Deploy → Manage deployments → ✏️ → New version → Deploy**.
-The next Refresh automatically re-sorts everything with the new rules.
+## Changing how emails are sorted
+**Easiest, from your phone:** open any email in the app and scroll to **Always sort emails from**. Pick a section
+(Important / FYI / Junk) and/or a category (School / Work / Family / Other), for that address or the whole domain.
+It re-sorts right away. See or remove your rules in **Settings → Sender rules**.
+
+**Bigger changes:** edit `Config.gs` in Apps Script (family, counselor, college whitelist, junk senders…), save, then
+**Deploy → Manage deployments → ✏️ → New version → Deploy**. The next Refresh re-sorts everything.
 
 ## Handy functions (pick one in the dropdown, then click Run)
 | Function | What it does |

@@ -76,7 +76,6 @@ await page.waitForSelector('.conn-status.bad');
 check((await page.locator('#conn-status').innerText()).includes('Wrong token'), 'Test connection: wrong token is explained');
 await shot('1-test-connection-wrong-token');
 await page.fill('#f-token', TOKEN);
-await page.fill('#f-gmail', 'kasen.test@gmail.com');
 await page.click('#test-conn');
 await page.waitForSelector('.conn-status.ok');
 check((await page.locator('#conn-status').innerText()).includes('Connected'), 'Test connection: correct token connects');
@@ -115,7 +114,11 @@ await page.click('#reader-gmail');
 await page.waitForTimeout(900);
 check((await page.evaluate(() => navigator.clipboard.readText())) === 'Thanksgiving plans' && (await page.evaluate(() => window.__opened))[0] === 'googlegmail://', '"Open Gmail" copies the subject and opens the Gmail app');
 await shot('6-open-gmail-copied');
+await page.evaluate(() => { const r = document.querySelector('#reader'); r.scrollTop = r.scrollHeight; });
+await page.waitForTimeout(2600); // let the toast leave
+await shot('6b-reader-sender-rules');
 await page.click('#reader-back');
+check(await page.locator(momSel + '.opened').count() === 1 && (await page.locator(momSel).innerText()).includes('Opened'), 'opened card is grayed out with "✓ Opened"');
 await page.waitForTimeout(3000);
 check(await page.locator(momSel + '.clearing').count() === 1, 'after closing the reader, the card shows the 10-second clearing line');
 await shot('7-closed-reader-clearing');
@@ -133,6 +136,36 @@ await page.waitForTimeout(500);
 check(!(await page.locator('.item[data-id="s09"]').count()) && (await page.locator('#toast').innerText()).includes('Hidden'), 'Hide in the reader hides the card (with Undo)');
 await page.click('#toast-undo');
 await page.waitForTimeout(300);
+
+// A deadline card stays after opening, grayed out as Opened (also after a refresh)
+c = await center('section.action .item[data-id="s01"]');
+await page.mouse.click(c.x, c.y);
+await page.waitForSelector('#reader:not([hidden]) .msg');
+await page.click('#reader-back');
+await page.click('#refresh-btn');
+await page.waitForFunction(() => !document.querySelector('#refresh-btn').classList.contains('spinning'));
+await page.waitForTimeout(300);
+check(await page.locator('.item[data-id="s01"].opened').count() === 1, 'opened deadline card stays, marked Opened, after refresh');
+await page.locator('.item[data-id="s01"]').scrollIntoViewIfNeeded();
+await shot('7b-opened-cards');
+
+// Sender rule from the reader: GitHub -> Junk, then remove it in Settings
+c = await center('section.fyi .item[data-id="s27"]');
+await page.mouse.click(c.x, c.y);
+await page.waitForSelector('#reader:not([hidden]) #r-rules .chips');
+await page.click('#r-rules .chips[data-k="section"] button[data-v="junk"]');
+await page.waitForFunction(() => !document.querySelector('#refresh-btn').classList.contains('spinning') && document.querySelector('section.junk .item[data-id="s27"]'), null, { timeout: 15000 });
+check(true, 'sender rule "Junk" moves the card to Junk');
+check(fake.call({ action: 'refresh', token: TOKEN }).rules['notifications@github.com']?.section === 'junk', 'rule stored in the script');
+await page.click('#reader-back');
+await page.click('#settings-btn');
+check((await page.locator('#rules-list').innerText()).includes('notifications@github.com → Junk'), 'Settings lists the rule');
+await page.locator('#rules-list').scrollIntoViewIfNeeded();
+await shot('7c-settings-sender-rules');
+await page.click('#rules-list [data-unrule="notifications@github.com"]');
+await page.click('#settings-done');
+await page.waitForFunction(() => !document.querySelector('#refresh-btn').classList.contains('spinning') && document.querySelector('section.fyi .item[data-id="s27"]'), null, { timeout: 15000 });
+check(!fake.call({ action: 'refresh', token: TOKEN }).rules['notifications@github.com'], 'removing the rule puts it back in FYI');
 
 // Backup path: a card opened over a minute ago that never faded is cleared on the next refresh
 await page.evaluate(() => { const st = JSON.parse(localStorage.getItem('eh.state')); st.tapped.s27 = Date.now() - 40 * 60e3; localStorage.setItem('eh.state', JSON.stringify(st)); });

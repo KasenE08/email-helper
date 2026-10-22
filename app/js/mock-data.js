@@ -7,7 +7,7 @@ export function makeMock(now = Date.now()) {
   const at = (days, h, m = 0) => { const d = new Date(now); d.setDate(d.getDate() + days); d.setHours(h, m, 0, 0); return d.getTime(); };
   const id = (n) => `demo${String(n).padStart(3, '0')}`;
 
-  return [
+  const list = [
     // Needs Reply / Action
     { id: id(1), section: 'action', cat: 'school', kind: 'reply', from: 'Dana Whitfield', date: ago(7 * HOUR),
       subject: 'Brag sheet + rec letter timeline',
@@ -85,4 +85,6 @@ export function makeMock(now = Date.now()) {
     { id: id(21), section: 'junk', cat: 'other', from: 'Hollister', date: ago(32 * HOUR), subject: '48 hrs only: 40% off everything', snippet: 'Your faves, on sale.', deadline: null },
     { id: id(22), section: 'junk', cat: 'school', from: 'Northfield State University', date: ago(56 * HOUR), subject: "Kasen, you're invited to apply — fee waived", snippet: 'Your Priority Application is ready.', deadline: null },
   ];
+  // Fake sender addresses (for the reader's "Always sort emails from" controls).
+  return list.map((e) => ({ ...e, fromEmail: e.fromEmail || `${e.from.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, '')}@example.com` }));
 }

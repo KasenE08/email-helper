@@ -155,6 +155,17 @@ var DEADLINE_CASES = [
   ['BRC: October 03&04', '2026-09-28 19:00', ['Oct 3 23:59']],
 ];
 
+// Sender rules from the app: [sample id, rules, expected section, expected cat]
+var RULE_CASES = [
+  ['s27', { 'notifications@github.com': { section: 'junk', cat: '' } }, 'junk', 'other'],          // GitHub fails -> Junk
+  ['s25', { '@vt.edu': { section: 'important', cat: '' } }, 'important', 'school'],                // VT (subdomain) -> Important
+  ['s28', { '@sewanee.edu': { section: 'fyi', cat: '' } }, 'fyi', 'school'],                       // rescue a non-whitelisted college
+  ['s24', { 'laura@example-ridingschool.com': { section: '', cat: 'work' } }, 'urgent', 'work'],    // re-tag as Work: her deadline (<48h) now makes it Urgent
+  ['s07', { '@adp.com': { section: 'fyi', cat: '' } }, 'action', 'work'],                           // FYI rule doesn't bury a needed action
+  ['s29', { '@chick-fil-a.com': { section: '', cat: 'family' } }, 'important', 'family'],          // "Family" overrides junk
+  ['s11', { '@adp.com': { section: 'junk', cat: '' } }, 'urgent', 'work'],                          // rules never touch codes
+];
+
 var MON_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtT_(t) {
   if (!t) return null;
@@ -186,7 +197,16 @@ function runRuleTests() {
     lines.push((ok ? '✓ ' : '✗ ') + pad('"' + c[0] + '"', 48) + ' -> ' + (got.join(', ') || 'none') + (ok ? '' : '   <-- expected ' + (c[2].join(', ') || 'none')));
   });
   lines.push('');
-  lines.push(failures ? failures + ' FAILED' : 'All passed (' + (SAMPLES.length + DEADLINE_CASES.length) + ' checks)');
+  lines.push('Sender rules (set from the app):');
+  RULE_CASES.forEach(function (c) {
+    var sample = SAMPLES.filter(function (x) { return x.e.id === c[0]; })[0];
+    var f = analyze(sample.e, cfg), d = decide(f, TEST_NOW, cfg, c[1]);
+    var ok = d.section === c[2] && d.cat === c[3];
+    if (!ok) failures++;
+    lines.push((ok ? '✓ ' : '✗ ') + pad(c[0] + ' ' + f.from, 24) + pad(JSON.stringify(c[1]).slice(0, 52), 54) + ' -> ' + d.section + ' / ' + d.cat + (ok ? '' : '   <-- expected ' + c[2] + ' / ' + c[3]));
+  });
+  lines.push('');
+  lines.push(failures ? failures + ' FAILED' : 'All passed (' + (SAMPLES.length + DEADLINE_CASES.length + RULE_CASES.length) + ' checks)');
   return { lines: lines, failures: failures };
 }
 

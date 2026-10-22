@@ -161,6 +161,21 @@ function summarize(email) {
   return s.length > 200 ? s.slice(0, 197).replace(/\s+\S*$/, '') + '…' : s;
 }
 
+/**
+ * Which summary the card shows. If you add an AI.gs file that defines aiSummarize_(email)
+ * and set CONFIG.AI_SUMMARIES = true, it's used (falls back to summarize() on any error).
+ * Runs only when a thread is new or changed (results are cached), so API use stays small.
+ */
+function cardSummary_(email, cfg) {
+  if (cfg.AI_SUMMARIES && typeof aiSummarize_ === 'function') {
+    try {
+      var s = aiSummarize_(email);
+      if (s && String(s).trim()) return String(s).trim().slice(0, 300);
+    } catch (e) { if (typeof console !== 'undefined') console.warn('AI summary failed: ' + e); }
+  }
+  return summarize(email);
+}
+
 // ======================================================================
 // Step 1: analyze (cached)
 // ======================================================================
@@ -187,7 +202,7 @@ function analyze(email, cfg) {
     fromEmail: fromEmail,
     domain: domain,
     subject: subject,
-    snippet: summarize(email),
+    snippet: cardSummary_(email, cfg),
     date: email.date,
     unread: !!email.unread,
     replied: !!email.replied,
@@ -275,8 +290,31 @@ function findCode(text) {
 var CODE_URGENT_MS = 15 * 60 * 1000;
 var OVERDUE_GRACE_MS = 24 * 3600 * 1000;
 
-function decide(f, now, cfg) {
-  var r = { section: 'fyi', kind: null, deadline: null, deadlineHasTime: false, moreDeadlines: 0, why: '' };
+/**
+ * Your sender rules (set from the app's reader). Keys: an address ('a@b.com') or a domain ('@b.com',
+ * which also matches subdomains). Values: { section: 'important'|'fyi'|'junk'|'', cat: 'school'|… |'' }.
+ */
+function senderRule(f, rules) {
+  if (!rules) return null;
+  if (rules[f.fromEmail]) return rules[f.fromEmail];
+  var parts = (f.domain || '').split('.');
+  for (var i = 0; i < parts.length - 1; i++) {
+    var r = rules['@' + parts.slice(i).join('.')];
+    if (r) return r;
+  }
+  return null;
+}
+
+function decide(f, now, cfg, rules) {
+  var r = { section: 'fyi', kind: null, deadline: null, deadlineHasTime: false, moreDeadlines: 0, why: '', cat: f.cat, rule: null };
+
+  // Your sender rule's category applies first ("Family" also means: never junk, replies count).
+  var rule = senderRule(f, rules);
+  if (rule && rule.cat) {
+    f = Object.assign({}, f, { cat: rule.cat });
+    if (rule.cat === 'family') { f.isFamily = true; f.junk = null; }
+    r.cat = rule.cat;
+  }
 
   // Nearest deadline that isn't more than 24 h overdue
   var live = (f.deadlines || []).filter(function (d) { return d.t > now - OVERDUE_GRACE_MS; });
@@ -305,6 +343,13 @@ function decide(f, now, cfg) {
   } else {
     r.section = 'fyi'; r.why = f.college === 'whitelist' ? 'whitelisted college' : 'default';
   }
+
+  // Your sender rule's section: Junk always wins; Important/FYI never bury a needed action or urgent item.
+  if (rule && rule.section && !f.code) {
+    if (rule.section === 'junk') { r.section = 'junk'; r.kind = null; r.why = 'your rule'; }
+    else if (r.section !== 'action' && r.section !== 'urgent') { r.section = rule.section; r.why = 'your rule'; }
+  }
+  if (rule) r.rule = rule;
   return r;
 }
 

@@ -20,6 +20,9 @@ var CONFIG = {
   // Needs-action cards with no deadline that you've already read drop off after this many days.
   ACTION_MAX_AGE_DAYS: 14,
 
+  // AI card summaries: needs an AI.gs file (see apps-script/AI.example.gs and the README).
+  AI_SUMMARIES: false,
+
   // ---- People ----
   FAMILY: ['parent1@example.com', 'parent2@example.com'],
   FAMILY_DOMAINS: [],

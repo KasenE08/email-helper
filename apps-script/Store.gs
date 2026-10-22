@@ -5,6 +5,7 @@
  *   threads : one row per inbox thread  [id, historyId, analyzed-features JSON]
  *   state   : cards you hid / tapped     [id, hidden|cleared|tapped, timestamp]
  *   queue   : thread ids still waiting to be processed (first run / big changes)
+ *   rules   : your sender rules from the app   [sender or @domain, section, category, timestamp]
  */
 
 var DB_NAME = 'Email Helper Data';
@@ -69,6 +70,18 @@ function saveState_(st) {
     Object.keys(st[k]).forEach(function (id) { rows.push([id, k, st[k][id]]); });
   });
   writeRows_('state', rows, 3);
+}
+
+// ---- sender rules ----
+
+function loadRules_() {
+  var out = {};
+  readRows_('rules').forEach(function (r) { if (r[0]) out[String(r[0])] = { section: String(r[1] || ''), cat: String(r[2] || ''), ts: Number(r[3]) || 0 }; });
+  return out;
+}
+
+function saveRules_(rules) {
+  writeRows_('rules', Object.keys(rules).map(function (k) { return [k, rules[k].section, rules[k].cat, rules[k].ts]; }), 4);
 }
 
 // ---- queue ----

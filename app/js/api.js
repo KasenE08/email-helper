@@ -5,6 +5,7 @@
 //   ?token=…&action=refresh                    -> { ok, done, processed, total, refreshedAt, emails, removed }
 //   ?token=…&action=hide|clear|tap|restore&id= -> { ok }
 //   ?token=…&action=read&id=                   -> { ok, thread: { subject, messages: [{ from, date, mine, body }] } }
+//   ?token=…&action=rule&key=&section=&cat=    -> { ok }  (sender rules set from the reader)
 // done=false means the first-run scan is still going; call refresh again.
 
 import { makeMock } from './mock-data.js';
@@ -60,7 +61,7 @@ export async function ping(settings) {
 export async function refresh(settings) {
   if (settings.demo) {
     await new Promise((r) => setTimeout(r, 600));
-    return { ok: true, done: true, processed: 0, total: 0, refreshedAt: Date.now(), emails: makeMock(Date.now()), removed: [] };
+    return { ok: true, done: true, processed: 0, total: 0, refreshedAt: Date.now(), emails: makeMock(Date.now()), removed: [], rules: {} };
   }
   // "busy" usually means a previous chunk is still finishing: wait and retry a few times.
   for (let attempt = 0; ; attempt++) {
@@ -80,6 +81,12 @@ export async function read(settings, email) {
       body: `${email.snippet}\n\nThis is demo text standing in for the full email. In the real app you see the whole message here, with links you can tap:\n\n⟦https://example.com/demo|Open the link from this email⟧\n\nThanks,\n${email.from}` }] };
   }
   return (await call(settings, 'read', { id: email.id }, 30_000)).thread;
+}
+
+/** Save a sender rule (both empty = delete). key: 'a@b.com' or '@b.com'. */
+export async function setRule(settings, key, section, cat) {
+  if (settings.demo) return { ok: true };
+  return call(settings, 'rule', { key, section: section || '', cat: cat || '' });
 }
 
 /** hide | clear | tap | restore. Throws on failure (caller queues it for later). */

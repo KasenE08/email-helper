@@ -14,7 +14,7 @@ function write(key, value) {
 
 const DEFAULT_SETTINGS = { scriptUrl: '', token: '', gmail: '', demo: false };
 const DEFAULT_STATE = { hidden: {}, cleared: {}, tapped: {}, collapsed: { junk: true } };
-const DEFAULT_CACHE = { emails: [], refreshedAt: 0, removed: [] };
+const DEFAULT_CACHE = { emails: [], refreshedAt: 0, removed: [], rules: {} };
 
 export const store = {
   settings: { ...DEFAULT_SETTINGS, ...read(KEYS.settings, {}) },
@@ -38,6 +38,8 @@ export const store = {
     write(KEYS.cache, this.cache);
   },
   tap(id) { this.state.tapped[id] = Date.now(); this.saveState(); },
+  /** Opened in the app (here, or on another device / before clearing Safari data). */
+  isOpened(e) { return !!this.state.tapped[e.id] || !!e.opened; },
   toggleCollapsed(section) { this.state.collapsed[section] = !this.state.collapsed[section]; this.saveState(); },
 
   queueEvent(action, id) { this.pending.push({ action, id, ts: Date.now() }); write(KEYS.pending, this.pending); },

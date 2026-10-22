@@ -72,7 +72,10 @@ await page.waitForTimeout(2500); // let toast leave
 // 7. Tap a no-deadline card -> clearing (fades after 10 s)
 c = await center('section.action .item:has-text("Mom")');
 await page.mouse.click(c.x, c.y);
-await page.waitForTimeout(3500);
+await page.waitForSelector('#reader:not([hidden]) .msg');
+await page.waitForTimeout(600);
+await page.click('#reader-back'); // closing the reader starts the 10 s fade
+await page.waitForTimeout(3000);
 await page.locator('section.action .item:has-text("Mom")').scrollIntoViewIfNeeded();
 await shot('7-tapped-clearing');
 await page.waitForTimeout(8000);
@@ -83,7 +86,6 @@ await page.evaluate(() => window.scrollTo(0, 0));
 await page.click('#settings-btn');
 await page.fill('#f-url', 'https://script.google.com/macros/s/AKfy…/exec');
 await page.fill('#f-token', 'example-token');
-await page.fill('#f-gmail', 'you@gmail.com');
 await shot('9-settings');
 
 console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no console errors');

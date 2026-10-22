@@ -1,8 +1,8 @@
-// Service worker: makes the app open instantly and work offline.
-// Strategy: serve the app shell from cache, update the cache in the background
-// (stale-while-revalidate), so a new deploy shows up on the next launch.
-// Requests to other origins (the Apps Script) are never touched.
-const CACHE = 'eh-shell-v4';
+// Service worker: makes the app open fast and work offline.
+// Strategy: network first (so a new deploy shows up on the very next open), falling back to
+// the cache if the network is slow (>2.5 s) or offline. Requests to other origins (the Apps
+// Script) are never touched.
+const CACHE = 'eh-shell-v5';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/model.js', 'js/store.js', 'js/api.js', 'js/mock-data.js',
@@ -24,13 +24,12 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  e.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(e.request, { ignoreSearch: true });
-      const fresh = fetch(e.request)
-        .then((res) => { if (res.ok) cache.put(e.request, res.clone()); return res; })
-        .catch(() => cached);
-      return cached || fresh;
-    }),
-  );
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const network = fetch(e.request).then((res) => { if (res.ok) cache.put(e.request, res.clone()); return res; });
+    const cached = await cache.match(e.request, { ignoreSearch: true });
+    if (!cached) return network;
+    const timeout = new Promise((r) => setTimeout(() => r(cached), 2500));
+    return Promise.race([network.catch(() => cached), timeout]);
+  })());
 });

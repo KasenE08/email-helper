@@ -10,12 +10,14 @@
  *                                      done=false: first-run scan still going, call again.
  *   ?action=hide|clear|tap|restore&id=<threadId>   -> { ok }
  *   ?action=read&id=<threadId>      -> { ok, thread: { id, subject, messages: [{ from, date, mine, body }] } }
+ *   ?action=rule&key=<a@b.com|@b.com>&section=<important|fyi|junk|>&cat=<school|work|family|other|>
+ *                                   -> { ok }   (both empty = delete the rule)
  *   ?action=rescan                  -> forget the cache, re-read everything on next refresh
  *
  * Errors come back as { ok: false, error: 'bad-token' | 'busy' | 'server', message }.
  */
 
-var APP_VERSION = 2;
+var APP_VERSION = 3;
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
@@ -25,6 +27,7 @@ function doGet(e) {
       case 'ping': return json_({ ok: true, version: APP_VERSION, rules: RULES_VERSION });
       case 'refresh': return json_(refresh_());
       case 'hide': case 'clear': case 'tap': case 'restore': return json_(setState_(p.action, p.id));
+      case 'rule': return json_(setRule_(p.key, p.section || '', p.cat || ''));
       case 'read':
         if (!p.id || !/^[A-Za-z0-9_-]{2,40}$/.test(p.id)) return json_({ ok: false, error: 'bad-id' });
         return json_({ ok: true, thread: readThread_(p.id) });
@@ -107,6 +110,7 @@ function refresh_() {
     }
 
     var state = loadState_();
+    var rules = loadRules_();
     if (!queue.length) pruneState_(state, cache);
     var now = Date.now();
     return {
@@ -115,8 +119,9 @@ function refresh_() {
       processed: total - queue.length,
       total: total,
       refreshedAt: now,
-      emails: buildCards_(cache, state, now, cfg),
+      emails: buildCards_(cache, state, now, cfg, rules),
       removed: recentlyRemoved_(cache, state),
+      rules: rules,
     };
   } finally {
     lock.releaseLock();
@@ -124,7 +129,7 @@ function refresh_() {
 }
 
 /** Turn cached features into the card list the phone shows. */
-function buildCards_(cache, state, now, cfg) {
+function buildCards_(cache, state, now, cfg, rules) {
   // Which kinds of tasks were later confirmed done, per sender domain ("Thanks for completing your assessment").
   var doneBy = {};
   Object.keys(cache).forEach(function (id) {
@@ -140,7 +145,7 @@ function buildCards_(cache, state, now, cfg) {
   Object.keys(cache).forEach(function (id) {
     var f = cache[id].f;
     if (!f || state.hidden[id] || state.cleared[id]) return;
-    var d = decide(f, now, cfg);
+    var d = decide(f, now, cfg, rules);
     if (!isLive(f, d, now, cfg)) return;
     if (d.section === 'action' && d.kind === 'action' && !d.deadline &&
         (f.taskWords || []).some(function (w) { return doneBy[f.domain + '|' + w] > f.date; })) return;
@@ -162,8 +167,8 @@ function buildCards_(cache, state, now, cfg) {
   return items.map(function (x) {
     var f = x.f, d = x.d;
     return {
-      id: f.id, msgId: f.msgId || '', from: f.from, subject: f.subject, snippet: f.snippet, date: f.date,
-      section: d.section, cat: f.cat, kind: d.kind, code: f.code || null,
+      id: f.id, msgId: f.msgId || '', from: f.from, fromEmail: f.fromEmail, subject: f.subject, snippet: f.snippet, date: f.date,
+      section: d.section, cat: d.cat || f.cat, kind: d.kind, code: f.code || null, opened: !!state.tapped[f.id],
       deadline: d.deadline, deadlineHasTime: d.deadlineHasTime, moreDeadlines: d.moreDeadlines,
       deadlines: f.deadlines, unread: f.unread,
     };
@@ -189,6 +194,24 @@ function pruneState_(state, cache) {
     Object.keys(state[k]).forEach(function (id) { if (!cache[id]) { delete state[k][id]; changed = true; } });
   });
   if (changed) saveState_(state);
+}
+
+/** Save (or delete, if both empty) a sender rule set from the app. */
+function setRule_(key, section, cat) {
+  key = String(key || '').toLowerCase().trim();
+  if (!/^(@?[a-z0-9._%+-]+(@[a-z0-9.-]+)?\.[a-z]{2,})$/.test(key)) return { ok: false, error: 'bad-key' };
+  if (['', 'important', 'fyi', 'junk'].indexOf(section) < 0 || ['', 'school', 'work', 'family', 'other'].indexOf(cat) < 0) return { ok: false, error: 'bad-rule' };
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok: false, error: 'busy' };
+  try {
+    var rules = loadRules_();
+    if (!section && !cat) delete rules[key];
+    else rules[key] = { section: section, cat: cat, ts: Date.now() };
+    saveRules_(rules);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function setState_(action, id) {
@@ -236,12 +259,12 @@ function previewMyInbox() {
   var r, started = Date.now();
   do { r = refresh_(); } while (r.ok && !r.done && Date.now() - started < 4.5 * 60e3);
   if (!r.ok) { Logger.log('Error: ' + JSON.stringify(r)); return; }
-  var cfg = CONFIG, now = Date.now(), cache = loadThreads_(), rows = [];
+  var cfg = CONFIG, now = Date.now(), cache = loadThreads_(), rules = loadRules_(), rows = [];
   Object.keys(cache).forEach(function (id) {
     var f = cache[id].f;
     if (!f) return;
-    var d = decide(f, now, cfg);
-    rows.push({ s: d.section, line: (isLive(f, d, now, cfg) ? '  ' : '· ') + pad_(d.section, 10) + pad_(f.cat, 7) + pad_(f.from, 24) + pad_(f.subject, 50) +
+    var d = decide(f, now, cfg, rules);
+    rows.push({ s: d.section, line: (isLive(f, d, now, cfg) ? '  ' : '· ') + pad_(d.section, 10) + pad_(d.cat, 7) + pad_(f.from, 24) + pad_(f.subject, 50) +
       (d.deadline ? ' [' + new Date(d.deadline).toLocaleString() + ']' : '') + '  — ' + d.why });
   });
   var order = ['action', 'urgent', 'important', 'fyi', 'junk'];

@@ -20,12 +20,14 @@
  *                                      done=false: first-run scan still going, call again.
  *   ?action=hide|clear|tap|restore&id=<threadId>   -> { ok }
  *   ?action=read&id=<threadId>      -> { ok, thread: { id, subject, messages: [{ from, date, mine, body }] } }
+ *   ?action=rule&key=<a@b.com|@b.com>&section=<important|fyi|junk|>&cat=<school|work|family|other|>
+ *                                   -> { ok }   (both empty = delete the rule)
  *   ?action=rescan                  -> forget the cache, re-read everything on next refresh
  *
  * Errors come back as { ok: false, error: 'bad-token' | 'busy' | 'server', message }.
  */
 
-var APP_VERSION = 2;
+var APP_VERSION = 3;
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
@@ -35,6 +37,7 @@ function doGet(e) {
       case 'ping': return json_({ ok: true, version: APP_VERSION, rules: RULES_VERSION });
       case 'refresh': return json_(refresh_());
       case 'hide': case 'clear': case 'tap': case 'restore': return json_(setState_(p.action, p.id));
+      case 'rule': return json_(setRule_(p.key, p.section || '', p.cat || ''));
       case 'read':
         if (!p.id || !/^[A-Za-z0-9_-]{2,40}$/.test(p.id)) return json_({ ok: false, error: 'bad-id' });
         return json_({ ok: true, thread: readThread_(p.id) });
@@ -117,6 +120,7 @@ function refresh_() {
     }
 
     var state = loadState_();
+    var rules = loadRules_();
     if (!queue.length) pruneState_(state, cache);
     var now = Date.now();
     return {
@@ -125,8 +129,9 @@ function refresh_() {
       processed: total - queue.length,
       total: total,
       refreshedAt: now,
-      emails: buildCards_(cache, state, now, cfg),
+      emails: buildCards_(cache, state, now, cfg, rules),
       removed: recentlyRemoved_(cache, state),
+      rules: rules,
     };
   } finally {
     lock.releaseLock();
@@ -134,7 +139,7 @@ function refresh_() {
 }
 
 /** Turn cached features into the card list the phone shows. */
-function buildCards_(cache, state, now, cfg) {
+function buildCards_(cache, state, now, cfg, rules) {
   // Which kinds of tasks were later confirmed done, per sender domain ("Thanks for completing your assessment").
   var doneBy = {};
   Object.keys(cache).forEach(function (id) {
@@ -150,7 +155,7 @@ function buildCards_(cache, state, now, cfg) {
   Object.keys(cache).forEach(function (id) {
     var f = cache[id].f;
     if (!f || state.hidden[id] || state.cleared[id]) return;
-    var d = decide(f, now, cfg);
+    var d = decide(f, now, cfg, rules);
     if (!isLive(f, d, now, cfg)) return;
     if (d.section === 'action' && d.kind === 'action' && !d.deadline &&
         (f.taskWords || []).some(function (w) { return doneBy[f.domain + '|' + w] > f.date; })) return;
@@ -172,8 +177,8 @@ function buildCards_(cache, state, now, cfg) {
   return items.map(function (x) {
     var f = x.f, d = x.d;
     return {
-      id: f.id, msgId: f.msgId || '', from: f.from, subject: f.subject, snippet: f.snippet, date: f.date,
-      section: d.section, cat: f.cat, kind: d.kind, code: f.code || null,
+      id: f.id, msgId: f.msgId || '', from: f.from, fromEmail: f.fromEmail, subject: f.subject, snippet: f.snippet, date: f.date,
+      section: d.section, cat: d.cat || f.cat, kind: d.kind, code: f.code || null, opened: !!state.tapped[f.id],
       deadline: d.deadline, deadlineHasTime: d.deadlineHasTime, moreDeadlines: d.moreDeadlines,
       deadlines: f.deadlines, unread: f.unread,
     };
@@ -199,6 +204,24 @@ function pruneState_(state, cache) {
     Object.keys(state[k]).forEach(function (id) { if (!cache[id]) { delete state[k][id]; changed = true; } });
   });
   if (changed) saveState_(state);
+}
+
+/** Save (or delete, if both empty) a sender rule set from the app. */
+function setRule_(key, section, cat) {
+  key = String(key || '').toLowerCase().trim();
+  if (!/^(@?[a-z0-9._%+-]+(@[a-z0-9.-]+)?\.[a-z]{2,})$/.test(key)) return { ok: false, error: 'bad-key' };
+  if (['', 'important', 'fyi', 'junk'].indexOf(section) < 0 || ['', 'school', 'work', 'family', 'other'].indexOf(cat) < 0) return { ok: false, error: 'bad-rule' };
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) return { ok: false, error: 'busy' };
+  try {
+    var rules = loadRules_();
+    if (!section && !cat) delete rules[key];
+    else rules[key] = { section: section, cat: cat, ts: Date.now() };
+    saveRules_(rules);
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function setState_(action, id) {
@@ -246,12 +269,12 @@ function previewMyInbox() {
   var r, started = Date.now();
   do { r = refresh_(); } while (r.ok && !r.done && Date.now() - started < 4.5 * 60e3);
   if (!r.ok) { Logger.log('Error: ' + JSON.stringify(r)); return; }
-  var cfg = CONFIG, now = Date.now(), cache = loadThreads_(), rows = [];
+  var cfg = CONFIG, now = Date.now(), cache = loadThreads_(), rules = loadRules_(), rows = [];
   Object.keys(cache).forEach(function (id) {
     var f = cache[id].f;
     if (!f) return;
-    var d = decide(f, now, cfg);
-    rows.push({ s: d.section, line: (isLive(f, d, now, cfg) ? '  ' : '· ') + pad_(d.section, 10) + pad_(f.cat, 7) + pad_(f.from, 24) + pad_(f.subject, 50) +
+    var d = decide(f, now, cfg, rules);
+    rows.push({ s: d.section, line: (isLive(f, d, now, cfg) ? '  ' : '· ') + pad_(d.section, 10) + pad_(d.cat, 7) + pad_(f.from, 24) + pad_(f.subject, 50) +
       (d.deadline ? ' [' + new Date(d.deadline).toLocaleString() + ']' : '') + '  — ' + d.why });
   });
   var order = ['action', 'urgent', 'important', 'fyi', 'junk'];
@@ -432,6 +455,21 @@ function summarize(email) {
   return s.length > 200 ? s.slice(0, 197).replace(/\s+\S*$/, '') + '…' : s;
 }
 
+/**
+ * Which summary the card shows. If you add an AI.gs file that defines aiSummarize_(email)
+ * and set CONFIG.AI_SUMMARIES = true, it's used (falls back to summarize() on any error).
+ * Runs only when a thread is new or changed (results are cached), so API use stays small.
+ */
+function cardSummary_(email, cfg) {
+  if (cfg.AI_SUMMARIES && typeof aiSummarize_ === 'function') {
+    try {
+      var s = aiSummarize_(email);
+      if (s && String(s).trim()) return String(s).trim().slice(0, 300);
+    } catch (e) { if (typeof console !== 'undefined') console.warn('AI summary failed: ' + e); }
+  }
+  return summarize(email);
+}
+
 // ======================================================================
 // Step 1: analyze (cached)
 // ======================================================================
@@ -458,7 +496,7 @@ function analyze(email, cfg) {
     fromEmail: fromEmail,
     domain: domain,
     subject: subject,
-    snippet: summarize(email),
+    snippet: cardSummary_(email, cfg),
     date: email.date,
     unread: !!email.unread,
     replied: !!email.replied,
@@ -546,8 +584,31 @@ function findCode(text) {
 var CODE_URGENT_MS = 15 * 60 * 1000;
 var OVERDUE_GRACE_MS = 24 * 3600 * 1000;
 
-function decide(f, now, cfg) {
-  var r = { section: 'fyi', kind: null, deadline: null, deadlineHasTime: false, moreDeadlines: 0, why: '' };
+/**
+ * Your sender rules (set from the app's reader). Keys: an address ('a@b.com') or a domain ('@b.com',
+ * which also matches subdomains). Values: { section: 'important'|'fyi'|'junk'|'', cat: 'school'|… |'' }.
+ */
+function senderRule(f, rules) {
+  if (!rules) return null;
+  if (rules[f.fromEmail]) return rules[f.fromEmail];
+  var parts = (f.domain || '').split('.');
+  for (var i = 0; i < parts.length - 1; i++) {
+    var r = rules['@' + parts.slice(i).join('.')];
+    if (r) return r;
+  }
+  return null;
+}
+
+function decide(f, now, cfg, rules) {
+  var r = { section: 'fyi', kind: null, deadline: null, deadlineHasTime: false, moreDeadlines: 0, why: '', cat: f.cat, rule: null };
+
+  // Your sender rule's category applies first ("Family" also means: never junk, replies count).
+  var rule = senderRule(f, rules);
+  if (rule && rule.cat) {
+    f = Object.assign({}, f, { cat: rule.cat });
+    if (rule.cat === 'family') { f.isFamily = true; f.junk = null; }
+    r.cat = rule.cat;
+  }
 
   // Nearest deadline that isn't more than 24 h overdue
   var live = (f.deadlines || []).filter(function (d) { return d.t > now - OVERDUE_GRACE_MS; });
@@ -576,6 +637,13 @@ function decide(f, now, cfg) {
   } else {
     r.section = 'fyi'; r.why = f.college === 'whitelist' ? 'whitelisted college' : 'default';
   }
+
+  // Your sender rule's section: Junk always wins; Important/FYI never bury a needed action or urgent item.
+  if (rule && rule.section && !f.code) {
+    if (rule.section === 'junk') { r.section = 'junk'; r.kind = null; r.why = 'your rule'; }
+    else if (r.section !== 'action' && r.section !== 'urgent') { r.section = rule.section; r.why = 'your rule'; }
+  }
+  if (rule) r.rule = rule;
   return r;
 }
 
@@ -925,6 +993,7 @@ function decodePart_(data) {
  *   threads : one row per inbox thread  [id, historyId, analyzed-features JSON]
  *   state   : cards you hid / tapped     [id, hidden|cleared|tapped, timestamp]
  *   queue   : thread ids still waiting to be processed (first run / big changes)
+ *   rules   : your sender rules from the app   [sender or @domain, section, category, timestamp]
  */
 
 var DB_NAME = 'Email Helper Data';
@@ -989,6 +1058,18 @@ function saveState_(st) {
     Object.keys(st[k]).forEach(function (id) { rows.push([id, k, st[k][id]]); });
   });
   writeRows_('state', rows, 3);
+}
+
+// ---- sender rules ----
+
+function loadRules_() {
+  var out = {};
+  readRows_('rules').forEach(function (r) { if (r[0]) out[String(r[0])] = { section: String(r[1] || ''), cat: String(r[2] || ''), ts: Number(r[3]) || 0 }; });
+  return out;
+}
+
+function saveRules_(rules) {
+  writeRows_('rules', Object.keys(rules).map(function (k) { return [k, rules[k].section, rules[k].cat, rules[k].ts]; }), 4);
 }
 
 // ---- queue ----
@@ -1164,6 +1245,17 @@ var DEADLINE_CASES = [
   ['BRC: October 03&04', '2026-09-28 19:00', ['Oct 3 23:59']],
 ];
 
+// Sender rules from the app: [sample id, rules, expected section, expected cat]
+var RULE_CASES = [
+  ['s27', { 'notifications@github.com': { section: 'junk', cat: '' } }, 'junk', 'other'],          // GitHub fails -> Junk
+  ['s25', { '@vt.edu': { section: 'important', cat: '' } }, 'important', 'school'],                // VT (subdomain) -> Important
+  ['s28', { '@sewanee.edu': { section: 'fyi', cat: '' } }, 'fyi', 'school'],                       // rescue a non-whitelisted college
+  ['s24', { 'laura@example-ridingschool.com': { section: '', cat: 'work' } }, 'urgent', 'work'],    // re-tag as Work: her deadline (<48h) now makes it Urgent
+  ['s07', { '@adp.com': { section: 'fyi', cat: '' } }, 'action', 'work'],                           // FYI rule doesn't bury a needed action
+  ['s29', { '@chick-fil-a.com': { section: '', cat: 'family' } }, 'important', 'family'],          // "Family" overrides junk
+  ['s11', { '@adp.com': { section: 'junk', cat: '' } }, 'urgent', 'work'],                          // rules never touch codes
+];
+
 var MON_ = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtT_(t) {
   if (!t) return null;
@@ -1195,7 +1287,16 @@ function runRuleTests() {
     lines.push((ok ? '✓ ' : '✗ ') + pad('"' + c[0] + '"', 48) + ' -> ' + (got.join(', ') || 'none') + (ok ? '' : '   <-- expected ' + (c[2].join(', ') || 'none')));
   });
   lines.push('');
-  lines.push(failures ? failures + ' FAILED' : 'All passed (' + (SAMPLES.length + DEADLINE_CASES.length) + ' checks)');
+  lines.push('Sender rules (set from the app):');
+  RULE_CASES.forEach(function (c) {
+    var sample = SAMPLES.filter(function (x) { return x.e.id === c[0]; })[0];
+    var f = analyze(sample.e, cfg), d = decide(f, TEST_NOW, cfg, c[1]);
+    var ok = d.section === c[2] && d.cat === c[3];
+    if (!ok) failures++;
+    lines.push((ok ? '✓ ' : '✗ ') + pad(c[0] + ' ' + f.from, 24) + pad(JSON.stringify(c[1]).slice(0, 52), 54) + ' -> ' + d.section + ' / ' + d.cat + (ok ? '' : '   <-- expected ' + c[2] + ' / ' + c[3]));
+  });
+  lines.push('');
+  lines.push(failures ? failures + ' FAILED' : 'All passed (' + (SAMPLES.length + DEADLINE_CASES.length + RULE_CASES.length) + ' checks)');
   return { lines: lines, failures: failures };
 }
 

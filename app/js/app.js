@@ -50,7 +50,7 @@ function card(e, section, now) {
   const dl = deadlineInfo(e, now);
   const mins = codeMinutesLeft(e, now);
   const fadeStart = fading.get(e.id);
-  const cls = ['item', dl?.overdue ? 'overdue' : '', fadeStart ? 'clearing' : ''].join(' ');
+  const cls = ['item', dl?.overdue ? 'overdue' : '', fadeStart ? 'clearing' : '', store.isOpened(e) ? 'opened' : ''].join(' ');
   const style = fadeStart ? ` style="--fade-ms:${FADE_MS}ms;--fade-delay:${-(now - fadeStart)}ms"` : '';
   const head = `<div class="r1"><span class="from">${esc(e.from)}</span><span class="time">${ago(e.date, now)}</span></div>
     <div class="subj">${esc(e.subject)}</div>`;
@@ -62,7 +62,7 @@ function card(e, section, now) {
   const chip = typeof e.code === 'string' ? ` <button class="code-chip" data-copy="${esc(e.code)}" aria-label="Copy code">${esc(e.code)}</button>` : '';
   return `<div class="${cls}" data-id="${esc(e.id)}"${style}>${head}
     <div class="snip">${esc(e.snippet)}</div>
-    <div class="meta"><span><span class="cat" style="--c:var(--${e.cat})">${CATS[e.cat] || 'Other'}</span>${chip}</span>${right}</div>
+    <div class="meta"><span><span class="cat" style="--c:var(--${e.cat})">${CATS[e.cat] || 'Other'}</span>${chip}${store.isOpened(e) ? '<span class="opened-tag">✓ Opened</span>' : ''}</span>${right}</div>
   </div>`;
 }
 
@@ -195,13 +195,83 @@ function renderReader(e, thread, error) {
     (thread ? '' : `<div class="r-loading ${error ? 'error' : ''}">${error ? esc(error) + ' Showing the preview.' : 'Loading the full email…'}</div>`);
 }
 
+// ---------- Sender rules (the easy way to fix sorting from your phone) ----------
+
+const SECTION_CHOICES = [['', 'Auto'], ['important', 'Important'], ['fyi', 'FYI'], ['junk', 'Junk']];
+const CAT_CHOICES = [['', 'Auto'], ['school', 'School'], ['work', 'Work'], ['family', 'Family'], ['other', 'Other']];
+let ruleScope = 'sender';
+
+function ruleKey(e, scope) { const em = (e.fromEmail || '').toLowerCase(); return scope === 'domain' ? '@' + em.split('@')[1] : em; }
+
+function renderRules(e) {
+  const box = $('#r-rules');
+  if (!e.fromEmail || !e.fromEmail.includes('@')) { box.hidden = true; return; }
+  box.hidden = false;
+  const rules = store.cache.rules || {};
+  const key = ruleKey(e, ruleScope);
+  const rule = rules[key] || { section: '', cat: '' };
+  const demo = store.settings.demo;
+  const chips = (k, list) => `<div class="chips" data-k="${k}">${list.map(([v, l]) => `<button data-v="${v}" class="${(rule[k] || '') === v ? 'on' : ''}" ${demo ? 'disabled' : ''}>${l}</button>`).join('')}</div>`;
+  box.innerHTML = `<div class="rr-title">Always sort emails from</div>
+    <div class="chips" data-k="scope"><button data-v="sender" class="${ruleScope === 'sender' ? 'on' : ''}">${esc(e.fromEmail)}</button><button data-v="domain" class="${ruleScope === 'domain' ? 'on' : ''}">all of ${esc(ruleKey(e, 'domain'))}</button></div>
+    <div class="rr-label">Section</div>${chips('section', SECTION_CHOICES)}
+    <div class="rr-label">Category</div>${chips('cat', CAT_CHOICES)}
+    <div class="rr-note">${demo ? 'Sender rules work with your real inbox (demo data is on).' : 'Re-sorts right away. Needed actions and urgent items still show up; Junk always wins.'}</div>`;
+}
+
+$('#r-rules').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button[data-v]');
+  const e = findEmail(readerId);
+  if (!b || !e || b.disabled) return;
+  const k = b.parentElement.dataset.k;
+  if (k === 'scope') { ruleScope = b.dataset.v; renderRules(e); return; }
+  const key = ruleKey(e, ruleScope);
+  const rule = { section: '', cat: '', ...(store.cache.rules || {})[key], [k]: b.dataset.v };
+  try {
+    await api.setRule(store.settings, key, rule.section, rule.cat);
+    const rules = { ...(store.cache.rules || {}) };
+    if (!rule.section && !rule.cat) delete rules[key]; else rules[key] = { ...rule, ts: Date.now() };
+    store.saveCache({ rules });
+    renderRules(e);
+    toast(!rule.section && !rule.cat ? 'Rule removed. Re-sorting…' : 'Rule saved. Re-sorting…');
+    refresh();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+function renderRulesList() {
+  const rules = Object.entries(store.cache.rules || {}).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
+  const label = (r) => [SECTION_CHOICES.find(([v]) => v === r.section)?.[1], CAT_CHOICES.find(([v]) => v === r.cat)?.[1]].filter((x) => x && x !== 'Auto').join(' · ');
+  $('#rules-list').innerHTML = rules.length
+    ? rules.map(([k, r]) => `<div class="rule-item"><span><b>${esc(k)}</b> → ${esc(label(r))}</span><button data-unrule="${esc(k)}">Remove</button></div>`).join('')
+    : '<div class="recent-empty">No rules yet. Open an email and use "Always sort emails from".</div>';
+}
+
+$('#rules-list').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('[data-unrule]');
+  if (!b) return;
+  try {
+    await api.setRule(store.settings, b.dataset.unrule, '', '');
+    const rules = { ...(store.cache.rules || {}) };
+    delete rules[b.dataset.unrule];
+    store.saveCache({ rules });
+    renderRulesList();
+    refresh();
+  } catch (err) { toast(err.message); }
+});
+
 async function openCard(id) {
   const e = findEmail(id);
   if (!e) return;
   store.tap(id);
   sync('tap', id);
   readerId = id;
+  const rules = store.cache.rules || {};
+  ruleScope = !rules[ruleKey(e, 'sender')] && rules[ruleKey(e, 'domain')] ? 'domain' : 'sender';
   renderReader(e, readCache.get(id));
+  renderRules(e);
+  render(); // shows it as opened behind the reader
   $('#reader').hidden = false;
   $('#reader').scrollTop = 0;
   if (readCache.has(id)) return;
@@ -278,7 +348,7 @@ async function refresh() {
     await flushPending(); // so the script already knows what you hid while offline
     for (let i = 0; i < MAX_CHUNKS; i++) {
       const res = await api.refresh(store.settings);
-      store.saveCache({ emails: res.emails, refreshedAt: res.refreshedAt || Date.now(), removed: res.removed || [] });
+      store.saveCache({ emails: res.emails, refreshedAt: res.refreshedAt || Date.now(), removed: res.removed || [], rules: res.rules || {} });
       if (res.done) {
         store.prune(res.emails.map((e) => e.id));
         clearStaleTaps();
@@ -392,11 +462,11 @@ function openSettings(setup = false) {
   $('#settings-done').textContent = setup ? 'Save' : 'Done';
   $('#f-url').value = s.scriptUrl;
   $('#f-token').value = s.token;
-  $('#f-gmail').value = s.gmail;
   $('#f-demo').checked = s.demo;
   $('#conn-status').textContent = '';
   $('#conn-status').className = 'conn-status';
   renderRecent();
+  renderRulesList();
   $('#settings').hidden = false;
   $('#settings').scrollTop = 0;
 }
@@ -405,7 +475,6 @@ function readForm() {
   return {
     scriptUrl: $('#f-url').value.trim(),
     token: $('#f-token').value.trim(),
-    gmail: $('#f-gmail').value.trim(),
     demo: $('#f-demo').checked,
   };
 }

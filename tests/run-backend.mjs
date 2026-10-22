@@ -112,6 +112,24 @@ const writesBefore = fake.sheetWrites();
 r = call({ action: 'refresh', token: TOKEN });
 check(r.total === 0 && fake.sheetWrites() === writesBefore, 'unchanged refresh skips the sheet writes (faster)');
 
+// Sender rules from the app (no re-scan needed)
+check(call({ action: 'rule', key: 'notifications@github.com', section: 'junk', token: TOKEN }).ok, 'rule saved');
+r = call({ action: 'refresh', token: TOKEN });
+check(r.emails.find((e) => e.id === 's27')?.section === 'junk' && r.rules['notifications@github.com']?.section === 'junk', 'rule re-sorts on the next refresh and is listed');
+check(call({ action: 'rule', key: '@vt.edu', cat: 'other', token: TOKEN }).ok, 'domain rule saved');
+r = call({ action: 'refresh', token: TOKEN });
+check(r.emails.filter((e) => e.fromEmail?.endsWith('vt.edu')).every((e) => e.cat === 'other'), 'domain rule changes category for subdomains');
+call({ action: 'rule', key: 'notifications@github.com', token: TOKEN });
+r = call({ action: 'refresh', token: TOKEN });
+check(r.emails.find((e) => e.id === 's27')?.section === 'fyi' && !r.rules['notifications@github.com'], 'clearing a rule restores normal sorting');
+check(call({ action: 'rule', key: 'not a sender', section: 'junk', token: TOKEN }).error === 'bad-key' && call({ action: 'rule', key: 'a@b.com', section: 'nope', token: TOKEN }).error === 'bad-rule', 'bad rules rejected');
+call({ action: 'rule', key: '@vt.edu', token: TOKEN });
+
+// "Opened in the app" survives on the script side
+call({ action: 'tap', id: 's25', token: TOKEN });
+r = call({ action: 'refresh', token: TOKEN });
+check(r.emails.find((e) => e.id === 's25')?.opened === true && r.emails.find((e) => e.id === 's26')?.opened === false, 'cards carry "opened" from the script');
+
 // Config change -> full re-analyze
 vm.runInContext("CONFIG.URGENT_HOURS = 72;", ctx);
 r = call({ action: 'refresh', token: TOKEN });
