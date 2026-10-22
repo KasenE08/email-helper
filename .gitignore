@@ -1,0 +1,4 @@
+# Personal config: never commit
+apps-script/Config.gs
+personal/
+node_modules/
