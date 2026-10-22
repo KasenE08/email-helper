@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flight Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #090c10; --panel: #10161c; --panel2: #141c24; --edge: #1f2a35; --text: #d5e1ea; --muted: #7d8e9c; --faint: #3c4a57;
+    --cyan: #59e1f0; --amber: #ffb020; --red: #ff4b4b;
+    --school: #59e1f0; --work: #c9a4ff; --family: #7ee6a1; --other: #8b98a5;
+    --cond: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); }
+  body { color: var(--text); font: 14px/1.4 'Barlow', system-ui, sans-serif; padding: calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 24px);
+    background-image: linear-gradient(var(--bg), var(--bg)), radial-gradient(circle, #16202a 1px, transparent 1px); background-size: 100% 0, 14px 14px; -webkit-font-smoothing: antialiased; }
+  .c { font-family: var(--cond); text-transform: uppercase; letter-spacing: .08em; }
+  .top { display: flex; align-items: center; gap: 10px; }
+  .id { font-family: var(--cond); font-weight: 700; font-size: 20px; letter-spacing: .14em; }
+  .id small { display: block; font-size: 11px; color: var(--muted); letter-spacing: .12em; font-weight: 500; }
+  .leds { display: flex; gap: 5px; margin-left: auto; }
+  .led { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .led.on { background: var(--family); box-shadow: 0 0 8px var(--family); }
+  .sync { font-family: var(--cond); font-weight: 700; font-size: 13px; letter-spacing: .12em; color: var(--cyan); background: transparent; border: 1.5px solid var(--cyan);
+    border-radius: 4px; padding: 7px 10px; box-shadow: inset 0 0 10px rgba(89,225,240,.15), 0 0 10px rgba(89,225,240,.12); }
+  .gauges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 4px; }
+  .g { background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; padding: 8px 10px 9px; position: relative; overflow: hidden; }
+  .g .v { font-family: var(--cond); font-weight: 700; font-size: 38px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--cyan); }
+  .g .k { font-family: var(--cond); font-weight: 600; font-size: 11px; letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+  .g .bar { display: flex; gap: 2px; margin-top: 7px; }
+  .g .bar i { flex: 1; height: 4px; background: var(--faint); border-radius: 1px; }
+  .g .bar i.on { background: currentColor; }
+  .g.warn { border-color: rgba(255,75,75,.6); background: linear-gradient(180deg, rgba(255,75,75,.12), var(--panel)); }
+  .g.warn .v, .g.warn .bar { color: var(--red); }
+  .g.week .v, .g.week .bar { color: var(--amber); }
+  .g .bar { color: var(--cyan); }
+  .status { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; padding: 4px 2px 0; }
+  section { margin-top: 14px; }
+  .sh { display: flex; align-items: center; gap: 8px; padding: 6px 2px; cursor: pointer; user-select: none; font-family: var(--cond); font-weight: 700; font-size: 14px; letter-spacing: .12em; text-transform: uppercase; }
+  .sh .no { color: var(--bg); background: var(--muted); border-radius: 2px; padding: 0 4px; font-size: 11px; }
+  .sh .ticks { flex: 1; height: 8px; background: repeating-linear-gradient(90deg, var(--faint) 0 1px, transparent 1px 6px); opacity: .8; }
+  .sh .n { font-variant-numeric: tabular-nums; color: var(--cyan); }
+  .sh .car { color: var(--muted); transition: transform .15s; font-size: 11px; }
+  .collapsed .car { transform: rotate(-90deg); }
+  .collapsed .body { display: none; }
+  .body { display: grid; gap: 6px; }
+  .card { background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; display: grid; grid-template-columns: 4px 1fr; overflow: hidden; }
+  .strip { background: var(--cat); }
+  .inner { padding: 9px 11px 10px; }
+  .row1 { display: flex; align-items: baseline; gap: 8px; }
+  .from { font-weight: 600; font-size: 14px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ago { font-family: var(--cond); font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+  .subj { font-weight: 500; color: #fff; margin-top: 1px; }
+  .snip { color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tags { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+  .tag { font-family: var(--cond); font-weight: 600; font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; background: var(--panel2); border: 1px solid var(--edge); color: var(--text); }
+  .tag.cat { color: var(--cat); border-color: color-mix(in srgb, var(--cat) 40%, transparent); }
+  .tag.dl { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .tag.dl span { color: var(--muted); }
+  .tag.code { color: var(--family); }
+  .card.overdue { border-color: var(--red); box-shadow: 0 0 0 1px rgba(255,75,75,.25), 0 0 16px rgba(255,75,75,.12); }
+  .card.overdue .tag.dl { color: var(--red); border-color: rgba(255,75,75,.5); background: rgba(255,75,75,.1); }
+  .card.overdue .tag.dl span { color: var(--red); opacity: .75; }
+  .junk .card .inner { padding: 6px 10px; }
+  .junk .subj { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="id">EMAIL·HELPER<small>INBOX TRIAGE SYSTEM</small></div>
+  <div class="leds"><span class="led on"></span><span class="led on"></span><span class="led"></span></div>
+  <button class="sync">⟳ SYNC</button>
+</div>
+<div class="gauges" id="gauges"></div>
+<div class="status c" id="status"></div>
+<main id="list"></main>
+<script src="mock.js"></script>
+<script>
+  const M = MOCK, c = M.counts();
+  const bar = (n, max = 8) => `<div class="bar">${Array.from({ length: max }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>`;
+  document.getElementById('gauges').innerHTML = `
+    <div class="g"><div class="v">${String(c.action).padStart(2, '0')}</div><div class="k">Action</div>${bar(c.action)}</div>
+    <div class="g week"><div class="v">${String(c.week).padStart(2, '0')}</div><div class="k">Due ≤ 7d</div>${bar(c.week)}</div>
+    <div class="g ${c.overdue ? 'warn' : ''}"><div class="v">${String(c.overdue).padStart(2, '0')}</div><div class="k">Overdue</div>${bar(c.overdue)}</div>`;
+  document.getElementById('status').innerHTML = `<span>Last sync ${M.refreshedAgo()}</span><span>Window 60d · 22 threads</span>`;
+  document.getElementById('list').innerHTML = M.grouped().map((s, i) => `
+    <section data-section class="${s.collapsed ? 'collapsed' : ''} ${s.id}">
+      <div class="sh" data-toggle><span class="no">S${i + 1}</span>${M.esc(s.name)}<span class="ticks"></span><span class="n">${String(s.items.length).padStart(2, '0')}</span><span class="car">▼</span></div>
+      <div class="body">${s.items.map((e) => {
+        const dl = M.deadline(e), code = M.codeLeft(e);
+        if (s.id === 'junk') return `<div class="card" style="--cat:var(--faint)"><div class="strip"></div><div class="inner"><div class="row1"><span class="from">${M.esc(e.from)}</span><span class="ago">${M.ago(e.date)}</span></div><div class="subj">${M.esc(e.subject)}</div></div></div>`;
+        return `<div class="card ${dl && dl.overdue ? 'overdue' : ''}" style="--cat:var(--${e.cat})">
+          <div class="strip"></div>
+          <div class="inner">
+            <div class="row1"><span class="from">${M.esc(e.from)}</span><span class="ago">${M.ago(e.date)}</span></div>
+            <div class="subj">${M.esc(e.subject)}</div>
+            <div class="snip">${M.esc(e.snippet)}</div>
+            <div class="tags"><span class="tag cat">${M.CATS[e.cat]}</span>${e.kind ? `<span class="tag">${e.kind === 'reply' ? '↩ Reply' : '▲ Action'}</span>` : ''}${code !== null ? `<span class="tag code">Code · T-${code}m</span>` : ''}
+              ${dl ? `<span class="tag dl">${M.esc(dl.label)} <span>${dl.overdue ? '+' : 'T-'}${dl.countdown}</span></span>` : ''}</div>
+          </div></div>`;
+      }).join('')}</div>
+    </section>`).join('');
+  M.wireToggles();
+</script>
+</body>
+</html>

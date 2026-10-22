@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Postmark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #15110d; --paper: #211a14; --paper2: #2a221a; --edge: #3a2f24; --ink: #efe3cf; --muted: #a8977f; --faint: #6e604f;
+    --teal: #3fb8a8; --mustard: #e3a83b; --lilac: #b39cf0; --slate: #8d939c; --red: #ff5a47;
+    --type: 'Courier Prime', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); }
+  body { color: var(--ink); font: 14px/1.4 'Bricolage Grotesque', system-ui, sans-serif; padding: calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 28px); -webkit-font-smoothing: antialiased; }
+  .t { font-family: var(--type); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+  .top { display: flex; justify-content: space-between; align-items: center; }
+  h1 { font-weight: 800; font-size: 34px; letter-spacing: -.03em; line-height: 1; font-variation-settings: 'opsz' 96; }
+  .top .t { color: var(--muted); margin-top: 4px; }
+  .refresh { font-family: var(--type); font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--bg); background: var(--ink);
+    border: 0; border-radius: 999px; padding: 9px 14px; }
+  .airmail { height: 8px; margin: 12px 0 12px; border-radius: 2px; background: repeating-linear-gradient(-45deg, var(--teal) 0 10px, var(--paper) 10px 16px, var(--mustard) 16px 26px, var(--paper) 26px 32px); opacity: .9; }
+  .cubbies { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .cubby { background: #0f0c09; border-radius: 6px; padding: 9px 10px 8px; box-shadow: inset 0 3px 8px rgba(0,0,0,.6), inset 0 0 0 1px var(--edge); }
+  .cubby b { font-size: 28px; font-weight: 800; line-height: 1; display: block; }
+  .cubby .t { color: var(--muted); font-size: 10px; letter-spacing: .06em; }
+  .cubby.bad b, .cubby.bad .t { color: var(--red); }
+  section { margin-top: 22px; }
+  .sh { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  .label { display: inline-flex; align-items: center; gap: 8px; background: var(--ink); color: var(--bg); font-family: var(--type); font-weight: 700; font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 4px 12px 4px 8px; clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%); padding-left: 16px; }
+  .label::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--bg); }
+  .sh .line { flex: 1; border-top: 1px dashed var(--edge); }
+  .sh .n { color: var(--muted); }
+  .sh .car { color: var(--muted); font-size: 10px; transition: transform .15s; }
+  .collapsed .car { transform: rotate(-90deg); }
+  .collapsed .body { display: none; }
+  .body { display: grid; gap: 10px; margin-top: 10px; }
+  .env { min-height: 128px; background: linear-gradient(160deg, var(--paper2), var(--paper) 55%); border: 1px solid var(--edge); border-radius: 4px; padding: 11px 12px 11px; display: grid; grid-template-columns: 1fr 62px; gap: 0 8px; position: relative; overflow: hidden; }
+  .from { font-weight: 600; font-size: 13.5px; color: var(--muted); }
+  .from .ago { font-family: var(--type); font-size: 11px; color: var(--faint); margin-left: 6px; }
+  .subj { font-weight: 600; font-size: 16px; line-height: 1.22; margin: 2px 0 4px; letter-spacing: -.01em; }
+  .snip { color: var(--muted); font-size: 13.5px; line-height: 1.38; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .meta { margin-top: 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .meta .due { color: var(--ink); font-weight: 700; }
+  .meta .kind { color: var(--muted); }
+  .meta .code { color: var(--teal); font-weight: 700; }
+  .side { position: relative; }
+  .stamp { width: 44px; height: 52px; margin-left: auto; position: relative; background: radial-gradient(circle, transparent 2.2px, var(--sc) 2.6px) -3px -3px / 7px 7px; transform: rotate(3deg); }
+  .stamp::after { content: attr(data-l); position: absolute; inset: 4px; background: var(--sc); color: #15110d; display: grid; place-items: center; font-family: var(--type); font-weight: 700; font-size: 10px;
+    letter-spacing: .04em; box-shadow: inset 0 0 0 1.5px rgba(21,17,13,.55); }
+  .pm { position: absolute; right: 8px; top: 54px; width: 66px; height: 66px; transform: rotate(-14deg); color: var(--ink); opacity: .82; pointer-events: none; }
+  .env.overdue { border-color: var(--red); box-shadow: inset 3px 0 0 var(--red); }
+  .env.overdue .pm { color: var(--red); opacity: 1; }
+  .env.overdue .meta .due { color: var(--red); }
+  .junk .env { min-height: 0; padding: 7px 10px; grid-template-columns: 1fr; }
+  .junk .subj { font-size: 13.5px; margin: 0; font-weight: 400; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="top"><div><h1>Today’s Post</h1><div class="t" id="ref"></div></div><button class="refresh">↻ Collect</button></div>
+<div class="airmail"></div>
+<div class="cubbies" id="cubbies"></div>
+<main id="list"></main>
+<script src="mock.js"></script>
+<script>
+  const M = MOCK, c = M.counts();
+  document.getElementById('ref').textContent = `Collected ${M.refreshedAgo()}`;
+  document.getElementById('cubbies').innerHTML = `
+    <div class="cubby"><b>${c.action}</b><span class="t">To answer</span></div>
+    <div class="cubby"><b>${c.week}</b><span class="t">Due this wk</span></div>
+    <div class="cubby ${c.overdue ? 'bad' : ''}"><b>${c.overdue}</b><span class="t">Overdue</span></div>`;
+  const STAMP = { school: ['--teal', 'SCHL'], work: ['--mustard', 'WORK'], family: ['--lilac', 'FAM'], other: ['--slate', 'MISC'] };
+  // Circular cancellation postmark with the deadline date in the middle + wavy lines.
+  const postmark = (dl, e) => {
+    const t = dl.date;
+    return `<svg class="pm" viewBox="0 0 66 66" fill="none" stroke="currentColor">
+      <circle cx="33" cy="33" r="30" stroke-width="2"/><circle cx="33" cy="33" r="22" stroke-width="1"/>
+      <text x="33" y="31" text-anchor="middle" font-family="Courier Prime" font-size="8" font-weight="700" fill="currentColor" stroke="none">${M.MON[t.getMonth()].toUpperCase()}</text>
+      <text x="33" y="45" text-anchor="middle" font-family="Bricolage Grotesque" font-size="16" font-weight="800" fill="currentColor" stroke="none">${t.getDate()}</text>
+    </svg>`;
+  };
+  document.getElementById('list').innerHTML = M.grouped().map((s) => `
+    <section data-section class="${s.collapsed ? 'collapsed' : ''} ${s.id}">
+      <div class="sh" data-toggle><span class="label">${M.esc(s.name)}</span><span class="line"></span><span class="n t">${s.items.length}</span><span class="car">▼</span></div>
+      <div class="body">${s.items.map((e) => {
+        const dl = M.deadline(e), code = M.codeLeft(e), [sc, sl] = STAMP[e.cat];
+        if (s.id === 'junk') return `<div class="env"><div><div class="from">${M.esc(e.from)}<span class="ago">${M.ago(e.date)}</span></div><div class="subj">${M.esc(e.subject)}</div></div></div>`;
+        return `<div class="env ${dl && dl.overdue ? 'overdue' : ''}">
+          <div>
+            <div class="from">${M.esc(e.from)}<span class="ago">${M.ago(e.date)}</span></div>
+            <div class="subj">${M.esc(e.subject)}</div>
+            <div class="snip">${M.esc(e.snippet)}</div>
+            <div class="meta t">${e.kind ? `<span class="kind">${e.kind === 'reply' ? '↩ Reply owed' : '✎ Action'}</span>` : ''}${dl ? `<span class="due">${dl.overdue ? '' : 'Due '}${M.esc(dl.label)}</span>` : ''}${code !== null ? `<span class="code">Code · ${code} min left</span>` : ''}</div>
+          </div>
+          <div class="side"><div class="stamp" style="--sc:var(${sc})" data-l="${sl}"></div></div>
+          ${dl ? postmark(dl, e) : ''}
+        </div>`;
+      }).join('')}</div>
+    </section>`).join('');
+  M.wireToggles();
+</script>
+</body>
+</html>

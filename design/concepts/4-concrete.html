@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Concrete</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0c0c0c; --fg: #f0efe8; --mid: #8d8c86; --acid: #d4ff3a; --red: #ff3b30; --mono: 'Space Mono', ui-monospace, monospace; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); }
+  body { color: var(--fg); font-family: 'Archivo', system-ui, sans-serif; padding: calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 28px); -webkit-font-smoothing: antialiased; }
+  .m { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .02em; }
+  .hdr { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 4px solid var(--fg); padding-bottom: 6px; }
+  h1 { font-weight: 900; font-stretch: 62%; font-size: 76px; line-height: .82; letter-spacing: -.02em; text-transform: uppercase; }
+  .hdr .m { text-align: right; color: var(--mid); line-height: 1.5; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 4px solid var(--fg); }
+  .stats div { padding: 8px 8px 6px; }
+  .stats div + div { border-left: 4px solid var(--fg); }
+  .stats b { display: block; font-weight: 900; font-stretch: 75%; font-size: 52px; line-height: .9; }
+  .stats .late { background: var(--red); color: #000; }
+  .refresh { display: flex; width: 100%; justify-content: space-between; align-items: center; margin: 10px 0 2px; font-family: 'Archivo'; font-weight: 900; font-stretch: 100%;
+    font-size: 18px; text-transform: uppercase; color: #000; background: var(--acid); border: 0; padding: 12px 14px; box-shadow: 5px 5px 0 var(--fg); }
+  .refresh .m { font-weight: 700; }
+  section { margin-top: 20px; }
+  .sh { display: flex; align-items: stretch; background: var(--fg); color: #000; cursor: pointer; user-select: none; }
+  .sh .no { font-family: var(--mono); font-weight: 700; padding: 6px 8px; border-right: 3px solid #000; font-size: 13px; display: flex; align-items: center; }
+  .sh h2 { font-weight: 900; font-stretch: 75%; font-size: 24px; text-transform: uppercase; padding: 3px 10px 1px; flex: 1; letter-spacing: -.01em; }
+  .sh .n { font-family: var(--mono); font-weight: 700; font-size: 13px; padding: 6px 10px; display: flex; align-items: center; border-left: 3px solid #000; }
+  .collapsed .sh { background: transparent; color: var(--fg); outline: 3px solid var(--fg); outline-offset: -3px; }
+  .collapsed .sh .no, .collapsed .sh .n { border-color: var(--fg); }
+  .collapsed .body { display: none; }
+  .body { display: grid; gap: 10px; margin-top: 10px; }
+  .card { border: 3px solid var(--fg); padding: 10px 11px 11px; position: relative; }
+  .row1 { display: flex; justify-content: space-between; gap: 8px; }
+  .from { font-family: var(--mono); font-weight: 700; font-size: 12px; text-transform: uppercase; }
+  .ago { color: var(--mid); }
+  .subj { font-weight: 800; font-stretch: 90%; font-size: 19px; line-height: 1.1; margin: 5px 0 5px; letter-spacing: -.01em; }
+  .snip { font-size: 13.5px; line-height: 1.35; color: #bdbcb5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tags { display: flex; gap: 0; margin-top: 10px; flex-wrap: wrap; }
+  .tag { font-family: var(--mono); font-weight: 700; font-size: 11px; text-transform: uppercase; padding: 3px 7px; border: 2px solid var(--fg); margin-right: -2px; }
+  .tag.cat { background: var(--fg); color: #000; }
+  .tag.code { background: var(--acid); color: #000; border-color: var(--acid); }
+  .card.overdue { border-color: var(--red); box-shadow: 6px 6px 0 var(--red); }
+  .card.overdue .tag.dl { background: var(--red); border-color: var(--red); color: #000; }
+  .card.overdue .subj { color: var(--red); }
+  .junk .card { padding: 6px 10px; border-width: 2px; }
+  .junk .subj { font-size: 14px; margin: 2px 0 0; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="hdr"><h1>Inbox</h1><div class="m" id="meta"></div></div>
+<div class="stats" id="stats"></div>
+<button class="refresh">Refresh ↻ <span class="m" id="ref"></span></button>
+<main id="list"></main>
+<script src="mock.js"></script>
+<script>
+  const M = MOCK, c = M.counts();
+  const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  document.getElementById('meta').innerHTML = `${DAYS[M.NOW.getDay()]} ${M.NOW.getMonth() + 1}.${M.NOW.getDate()}<br>22 threads`;
+  document.getElementById('ref').textContent = M.refreshedAgo();
+  document.getElementById('stats').innerHTML = `
+    <div><b>${String(c.action).padStart(2, '0')}</b><span class="m">Action</span></div>
+    <div><b>${String(c.week).padStart(2, '0')}</b><span class="m">Due/week</span></div>
+    <div class="${c.overdue ? 'late' : ''}"><b>${String(c.overdue).padStart(2, '0')}</b><span class="m">Overdue</span></div>`;
+  document.getElementById('list').innerHTML = M.grouped().map((s, i) => `
+    <section data-section class="${s.collapsed ? 'collapsed' : ''} ${s.id}">
+      <div class="sh" data-toggle><span class="no">0${i + 1}</span><h2>${M.esc(s.id === 'action' ? 'Needs action' : s.name)}</h2><span class="n">${s.items.length}${s.collapsed ? ' +' : ''}</span></div>
+      <div class="body">${s.items.map((e) => {
+        const dl = M.deadline(e), code = M.codeLeft(e);
+        if (s.id === 'junk') return `<div class="card"><div class="row1 m"><span class="from">${M.esc(e.from)}</span><span class="ago">${M.ago(e.date)}</span></div><div class="subj">${M.esc(e.subject)}</div></div>`;
+        return `<div class="card ${dl && dl.overdue ? 'overdue' : ''}">
+          <div class="row1"><span class="from">${M.esc(e.from)}</span><span class="m ago">${M.ago(e.date)}</span></div>
+          <div class="subj">${M.esc(e.subject)}</div>
+          <div class="snip">${M.esc(e.snippet)}</div>
+          <div class="tags"><span class="tag cat">${M.CATS[e.cat]}</span>${e.kind ? `<span class="tag">${e.kind === 'reply' ? 'Reply' : 'Action'}</span>` : ''}${dl ? `<span class="tag dl">${dl.overdue ? '' : 'Due '}${M.esc(dl.label)}</span>` : ''}${code !== null ? `<span class="tag code">Code ${code}m left</span>` : ''}</div>
+        </div>`;
+      }).join('')}</div>
+    </section>`).join('');
+  M.wireToggles();
+</script>
+</body>
+</html>
