@@ -3,7 +3,7 @@
 // Contract (GET only, so the browser never sends a CORS preflight):
 //   ?token=…&action=ping                       -> { ok, version }
 //   ?token=…&action=refresh                    -> { ok, done, processed, total, refreshedAt, emails, removed }
-//   ?token=…&action=hide|clear|tap|restore&id= -> { ok }
+//   ?token=…&action=hide|clear|tap|restore&id=  (or &ids=a,b,c) -> { ok }
 //   ?token=…&action=read&id=                   -> { ok, thread: { subject, messages: [{ from, date, mine, body }] } }
 //   ?token=…&action=rule&key=&section=&cat=    -> { ok }  (sender rules set from the reader)
 // done=false means the first-run scan is still going; call refresh again.
@@ -90,8 +90,12 @@ export async function setRule(settings, key, section, cat) {
   return call(settings, 'rule', { key, section: section || '', cat: cat || '' });
 }
 
-/** hide | clear | tap | restore. Throws on failure (caller queues it for later). */
+/** hide | clear | tap | restore for one id or an array of ids. Throws on failure (caller queues it). */
 export async function sendEvent(settings, action, id) {
   if (settings.demo) return { ok: true };
+  if (Array.isArray(id)) {
+    for (let i = 0; i < id.length; i += 150) await call(settings, action, { ids: id.slice(i, i + 150).join(',') });
+    return { ok: true };
+  }
   return call(settings, action, { id });
 }

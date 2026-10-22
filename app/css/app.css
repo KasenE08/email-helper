@@ -51,7 +51,11 @@ h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1
 
 /* Sections */
 section { margin-top: 30px; }
-.sh { display: flex; width: 100%; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 4px 0; text-align: left; }
+.sh-row { display: flex; align-items: center; gap: 10px; }
+.sec-clear { flex: none; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--raise); border-radius: 999px; padding: 4px 10px; }
+.sec-clear:active { background: var(--raise2); color: var(--text); }
+section.clearing-all .body { opacity: 0; transform: translateX(-12px); transition: opacity .18s ease, transform .18s ease; }
+.sh { display: flex; flex: 1; min-width: 0; width: 100%; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 4px 0; text-align: left; }
 .sh .n { color: var(--faint); }
 .sh .car { margin-left: auto; font-size: 12px; transition: transform .15s; }
 .collapsed .car { transform: rotate(-90deg); }

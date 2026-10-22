@@ -103,8 +103,11 @@ export function effectiveSection(e, now) {
 
 // Should this card be gone entirely?
 // state: { hidden: {id: ts}, cleared: {id: ts} } (see store.js)
+// You hid/cleared it after its latest message. A newer reply in the thread brings the card back.
+export const stillApplies = (ts, e) => !!ts && ts >= (e.date || 0);
+
 export function isGone(e, state, now) {
-  if (state.hidden[e.id] || state.cleared[e.id]) return true;
+  if (stillApplies(state.hidden[e.id], e) || stillApplies(state.cleared[e.id], e)) return true;
   // Had deadlines, and the last one is now more than 24 h past.
   if (allDeadlines(e).length && !currentDeadline(e, now)) return true;
   return false;

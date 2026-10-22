@@ -168,6 +168,22 @@ await page.click('#settings-done');
 await page.waitForFunction(() => !document.querySelector('#refresh-btn').classList.contains('spinning') && document.querySelector('section.fyi .item[data-id="s27"]'), null, { timeout: 15000 });
 check(!fake.call({ action: 'refresh', token: TOKEN }).rules['notifications@github.com'], 'removing the rule puts it back in FYI');
 
+// "Clear all" on a section (one batched request), then Undo
+await page.evaluate(() => window.scrollTo(0, 0));
+const fyiBefore = await page.locator('section.fyi .item').count();
+await page.locator('section.fyi .sec-clear').scrollIntoViewIfNeeded();
+await shot('7d-section-clear-all-button');
+const reqBefore = log.length;
+await page.click('section.fyi .sec-clear');
+await page.waitForTimeout(700);
+check(fyiBefore > 1 && !(await page.locator('section.fyi .item').count()) && (await page.locator('#toast').innerText()).includes(`Cleared ${fyiBefore}`), `Clear all empties FYI (${fyiBefore} cards) with an Undo toast`);
+check(log.slice(reqBefore).filter((a) => a === 'clear').length === 1, 'Clear all sends one batched request');
+check(!fake.call({ action: 'refresh', token: TOKEN }).emails.some((e) => e.section === 'fyi'), 'the script has them cleared too');
+await shot('7e-section-cleared-undo');
+await page.click('#toast-undo');
+await page.waitForTimeout(600);
+check(await page.locator('section.fyi .item').count() === fyiBefore && fake.call({ action: 'refresh', token: TOKEN }).emails.filter((e) => e.section === 'fyi').length === fyiBefore, 'Undo restores the whole section (here and in the script)');
+
 // Backup path: a card opened over a minute ago that never faded is cleared on the next refresh
 await page.evaluate(() => { const st = JSON.parse(localStorage.getItem('eh.state')); st.tapped.s27 = Date.now() - 40 * 60e3; localStorage.setItem('eh.state', JSON.stringify(st)); });
 await page.reload();

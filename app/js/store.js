@@ -3,6 +3,8 @@
 // so clearing Safari data doesn't bring hidden cards back. Events that fail (offline)
 // wait in `pending` and are re-sent before the next refresh.
 
+import { stillApplies } from './model.js';
+
 const KEYS = { settings: 'eh.settings', state: 'eh.state', cache: 'eh.cache', pending: 'eh.pending' };
 
 function read(key, fallback) {
@@ -39,9 +41,12 @@ export const store = {
   },
   tap(id) { this.state.tapped[id] = Date.now(); this.saveState(); },
   /** Opened in the app (here, or on another device / before clearing Safari data). */
-  isOpened(e) { return !!this.state.tapped[e.id] || !!e.opened; },
+  isOpened(e) { return stillApplies(this.state.tapped[e.id], e) || !!e.opened; },
+  clearMany(ids) { const now = Date.now(); ids.forEach((id) => { this.state.cleared[id] = now; }); this.saveState(); },
+  restoreMany(ids) { ids.forEach((id) => { delete this.state.hidden[id]; delete this.state.cleared[id]; }); this.saveState(); },
   toggleCollapsed(section) { this.state.collapsed[section] = !this.state.collapsed[section]; this.saveState(); },
 
+  /** id can be one id or an array (batch). */
   queueEvent(action, id) { this.pending.push({ action, id, ts: Date.now() }); write(KEYS.pending, this.pending); },
   setPending(list) { this.pending = list; write(KEYS.pending, list); },
 

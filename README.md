@@ -27,7 +27,9 @@ Each card is also tagged **School / Work / Family / Other** and shows a **deadli
 - **Needs Reply / Action, no deadline:** stays until you open it in the app (or reply in Gmail, for questions).
 - **Has a deadline:** stays until the deadline passes, red for 24 h after, then gone.
 - **Everything else:** gone once read (in the app or in Gmail).
-- **Done early?** Hold or swipe a card to hide it. Undo appears for 5 s; Settings → Recently hidden restores older ones.
+- **Done early?** Hold or swipe a card to hide it, or tap **Clear all** next to a section name to clear the whole section.
+  Undo appears for 5 s; Settings → Recently hidden restores older ones.
+- **A new reply** in a thread you hid or cleared brings the card back.
 
 ### Using it
 - **Tap a card** to read the full email in the app. Links are tappable, and cards you've opened show **✓ Opened** and gray out.

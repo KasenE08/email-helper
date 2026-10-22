@@ -41,7 +41,10 @@ function render() {
   $('#hint').hidden = false;
   $('#list').innerHTML = groups.filter((s) => s.items.length).map((s) => `
     <section class="${s.id} ${store.state.collapsed[s.id] ? 'collapsed' : ''}">
-      <button class="sh" data-sec="${s.id}" aria-expanded="${!store.state.collapsed[s.id]}">${esc(s.name)} <span class="n">${s.items.length}</span><span class="car">▾</span></button>
+      <div class="sh-row">
+        <button class="sh" data-sec="${s.id}" aria-expanded="${!store.state.collapsed[s.id]}">${esc(s.name)} <span class="n">${s.items.length}</span><span class="car">▾</span></button>
+        <button class="sec-clear" data-clear="${s.id}" aria-label="Clear all in ${esc(s.name)}">Clear all</button>
+      </div>
       <div class="body">${s.items.map((e) => card(e, s.id, now)).join('')}</div>
     </section>`).join('');
 }
@@ -104,7 +107,8 @@ function hideToast() { $('#toast').classList.remove('show'); }
 /** Send an event now; if that fails (offline etc.), queue it for the next refresh. */
 function sync(action, id) {
   if (store.settings.demo) return;
-  api.sendEvent(store.settings, action, id).catch(() => store.queueEvent(action, id));
+  // Queue for later unless the script refused it outright (retrying wouldn't help).
+  api.sendEvent(store.settings, action, id).catch((err) => { if (err.kind !== 'bad-id') store.queueEvent(action, id); });
 }
 
 /** Re-send queued events in order. Stops at the first failure (keeps the rest). */
@@ -113,7 +117,7 @@ async function flushPending() {
   const queue = [...store.pending];
   while (queue.length) {
     try { await api.sendEvent(store.settings, queue[0].action, queue[0].id); queue.shift(); }
-    catch { break; }
+    catch (err) { if (err.kind === 'bad-id') queue.shift(); else break; }
   }
   store.setPending(queue);
 }
@@ -141,6 +145,27 @@ function hideCard(id) {
     render();
     toast('Hidden', () => restore(id));
   });
+}
+
+/** "Clear all" for one section: everything in it disappears (Undo brings it all back). */
+function clearSection(sectionId) {
+  const now = Date.now();
+  const section = group(store.cache.emails, store.state, now).find((s) => s.id === sectionId);
+  const ids = (section?.items || []).map((e) => e.id);
+  if (!ids.length) return;
+  for (const id of ids) fading.delete(id);
+  const body = document.querySelector(`section.${sectionId}`);
+  if (body) body.classList.add('clearing-all');
+  setTimeout(() => {
+    store.clearMany(ids);
+    sync('clear', ids);
+    render();
+    toast(`Cleared ${ids.length} ${ids.length === 1 ? 'email' : 'emails'}`, () => {
+      store.restoreMany(ids);
+      sync('restore', ids);
+      render();
+    });
+  }, 200);
 }
 
 function restore(id) {
@@ -379,6 +404,8 @@ async function refresh() {
 const list = $('#list');
 
 list.addEventListener('click', (ev) => {
+  const clr = ev.target.closest('.sec-clear');
+  if (clr) { clearSection(clr.dataset.clear); return; }
   const sec = ev.target.closest('.sh');
   if (sec) { store.toggleCollapsed(sec.dataset.sec); render(); return; }
   const chip = ev.target.closest('.code-chip');

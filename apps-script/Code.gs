@@ -9,6 +9,7 @@
  *   ?action=refresh                 -> { ok, done, processed, total, emails: [...], removed: [...] }
  *                                      done=false: first-run scan still going, call again.
  *   ?action=hide|clear|tap|restore&id=<threadId>   -> { ok }
+ *   ?action=hide|clear|tap|restore&ids=<id1,id2,…>   -> { ok }   (batch, e.g. a section's "Clear all")
  *   ?action=read&id=<threadId>      -> { ok, thread: { id, subject, messages: [{ from, date, mine, body }] } }
  *   ?action=rule&key=<a@b.com|@b.com>&section=<important|fyi|junk|>&cat=<school|work|family|other|>
  *                                   -> { ok }   (both empty = delete the rule)
@@ -18,7 +19,7 @@
  * A refresh that hit Gmail's rate limit mid-scan returns ok with rateLimited: true (progress saved).
  */
 
-var APP_VERSION = 3;
+var APP_VERSION = 4;
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
@@ -27,7 +28,7 @@ function doGet(e) {
     switch (p.action || 'ping') {
       case 'ping': return json_({ ok: true, version: APP_VERSION, rules: RULES_VERSION });
       case 'refresh': return json_(refresh_());
-      case 'hide': case 'clear': case 'tap': case 'restore': return json_(setState_(p.action, p.id));
+      case 'hide': case 'clear': case 'tap': case 'restore': return json_(setState_(p.action, p.ids ? String(p.ids).split(',') : [p.id]));
       case 'rule': return json_(setRule_(p.key, p.section || '', p.cat || ''));
       case 'read':
         if (!p.id || !/^[A-Za-z0-9_-]{2,40}$/.test(p.id)) return json_({ ok: false, error: 'bad-id' });
@@ -150,7 +151,7 @@ function buildCards_(cache, state, now, cfg, rules) {
   var items = [];
   Object.keys(cache).forEach(function (id) {
     var f = cache[id].f;
-    if (!f || state.hidden[id] || state.cleared[id]) return;
+    if (!f || stillApplies_(state.hidden[id], f) || stillApplies_(state.cleared[id], f)) return;
     var d = decide(f, now, cfg, rules);
     if (!isLive(f, d, now, cfg)) return;
     if (d.section === 'action' && d.kind === 'action' && !d.deadline &&
@@ -174,7 +175,7 @@ function buildCards_(cache, state, now, cfg, rules) {
     var f = x.f, d = x.d;
     return {
       id: f.id, msgId: f.msgId || '', from: f.from, fromEmail: f.fromEmail, subject: f.subject, snippet: f.snippet, date: f.date,
-      section: d.section, cat: d.cat || f.cat, kind: d.kind, code: f.code || null, opened: !!state.tapped[f.id],
+      section: d.section, cat: d.cat || f.cat, kind: d.kind, code: f.code || null, opened: stillApplies_(state.tapped[f.id], f),
       deadline: d.deadline, deadlineHasTime: d.deadlineHasTime, moreDeadlines: d.moreDeadlines,
       deadlines: f.deadlines, unread: f.unread,
     };
@@ -220,16 +221,22 @@ function setRule_(key, section, cat) {
   }
 }
 
-function setState_(action, id) {
-  if (!id || !/^[A-Za-z0-9_-]{2,40}$/.test(id)) return { ok: false, error: 'bad-id' };
+/** True if you hid / cleared / opened this card AFTER its latest message (a new reply brings it back). */
+function stillApplies_(ts, f) { return !!ts && ts >= f.date; }
+
+function setState_(action, ids) {
+  ids = (ids || []).filter(function (x) { return x; });
+  if (!ids.length || ids.length > 300 || ids.some(function (id) { return !/^[A-Za-z0-9_-]{2,40}$/.test(id); })) return { ok: false, error: 'bad-id' };
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { ok: false, error: 'busy' };
   try {
     var st = loadState_(), now = Date.now();
-    if (action === 'restore') { delete st.hidden[id]; delete st.cleared[id]; delete st.tapped[id]; }
-    else if (action === 'hide') st.hidden[id] = now;
-    else if (action === 'clear') st.cleared[id] = now;
-    else if (action === 'tap') st.tapped[id] = now;
+    ids.forEach(function (id) {
+      if (action === 'restore') { delete st.hidden[id]; delete st.cleared[id]; delete st.tapped[id]; }
+      else if (action === 'hide') st.hidden[id] = now;
+      else if (action === 'clear') st.cleared[id] = now;
+      else if (action === 'tap') st.tapped[id] = now;
+    });
     saveState_(st);
     return { ok: true };
   } finally {

@@ -142,6 +142,27 @@ check(r.ok && !r.done && r.rateLimited && r.processed === 0, 'long rate limit: c
 r = call({ action: 'refresh', token: TOKEN });
 check(r.ok && r.done && r.emails.some((e) => e.id === 's19'), 'next call picks it back up (nothing dropped)');
 
+// Batch "Clear all" for a section, and Undo
+const fyiIds = r.emails.filter((e) => e.section === 'fyi').map((e) => e.id);
+check(fyiIds.length > 1 && call({ action: 'clear', ids: fyiIds.join(','), token: TOKEN }).ok, `batch clear accepted (${fyiIds.length} FYI cards)`);
+r = call({ action: 'refresh', token: TOKEN });
+check(!r.emails.some((e) => e.section === 'fyi'), 'Clear all empties the section');
+call({ action: 'restore', ids: fyiIds.join(','), token: TOKEN });
+r = call({ action: 'refresh', token: TOKEN });
+check(fyiIds.every((id) => r.emails.some((e) => e.id === id)), 'batch restore (Undo) brings them all back');
+check(call({ action: 'clear', ids: 'ok1,../bad', token: TOKEN }).error === 'bad-id', 'batch with a bad id is rejected');
+
+// A new reply in a hidden thread brings the card back
+call({ action: 'hide', id: 's24', token: TOKEN });
+r = call({ action: 'refresh', token: TOKEN });
+check(!r.emails.some((e) => e.id === 's24'), 'hidden card gone');
+const laura = gmailThreads.get('s24');
+clock.t += 60e3;
+laura.messages.push({ id: 's24m2', labelIds: ['INBOX', 'UNREAD'], snippet: 'One more thing: bring water.', internalDate: String(clock.t), payload: { headers: [{ name: 'From', value: 'Laura <laura@example-ridingschool.com>' }, { name: 'To', value: ME }, { name: 'Subject', value: 'Re: Welcome to class!' }] }, _body: 'One more thing: bring water.' });
+laura.historyId = nextHist();
+r = call({ action: 'refresh', token: TOKEN });
+check(r.emails.some((e) => e.id === 's24'), 'a new message in a hidden thread brings the card back');
+
 // Config change -> full re-analyze
 vm.runInContext("CONFIG.URGENT_HOURS = 72;", ctx);
 r = call({ action: 'refresh', token: TOKEN });
