@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Icon options (round 2)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: #0a0a0c; }
+  body { color: #e8e8ea; font: 14px/1.4 -apple-system, system-ui, sans-serif; padding: 24px 16px 32px; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .sub { color: #8a8a92; font-size: 13px; margin-bottom: 20px; }
+  .opt { display: grid; grid-template-columns: 128px 1fr; gap: 16px; align-items: center; margin-bottom: 22px; }
+  .opt img { width: 128px; height: 128px; border-radius: 22.37%; display: block; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+  .opt b { font-size: 17px; display: block; }
+  .opt p { color: #9a9aa2; font-size: 13.5px; margin-top: 3px; }
+  .home { margin-top: 12px; border-radius: 28px; padding: 22px 18px 18px; background: radial-gradient(120% 90% at 20% 0%, #2b3550, #11131b 60%), #11131b; }
+  .home .lbl { color: #8a8a92; font-size: 12px; margin-bottom: 14px; }
+  .row { display: flex; justify-content: space-around; }
+  .app { text-align: center; width: 72px; }
+  .app img { width: 62px; height: 62px; border-radius: 22.37%; display: block; margin: 0 auto 6px; }
+  .app span { font-size: 11.5px; color: #f2f2f5; }
+</style>
+</head>
+<body>
+<h1>App icon options</h1>
+<div class="sub">Round 2 · abstract shapes. Rendered with iOS corner rounding. Bottom: actual home-screen size.</div>
+<div class="opt"><img src="../icons/r2-a-orbit.svg" alt=""><div><b>A · Orbit</b><p>A large disc with a small coral dot cut into its edge. One thing standing out.</p></div></div>
+<div class="opt"><img src="../icons/r2-b-fold.svg" alt=""><div><b>B · Fold</b><p>A diamond split in two, light on top. Quietly suggests a folded flap.</p></div></div>
+<div class="opt"><img src="../icons/r2-c-arcs.svg" alt=""><div><b>C · Arcs</b><p>Three arcs fading out from one dot. Priority rippling outward.</p></div></div>
+<div class="home">
+  <div class="lbl">Home screen @ 1×</div>
+  <div class="row">
+    <div class="app"><img src="../icons/r2-a-orbit.svg" alt=""><span>Email</span></div>
+    <div class="app"><img src="../icons/r2-b-fold.svg" alt=""><span>Email</span></div>
+    <div class="app"><img src="../icons/r2-c-arcs.svg" alt=""><span>Email</span></div>
+  </div>
+</div>
+</body>
+</html>

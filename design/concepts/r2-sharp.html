@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sharp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0a0a0a; --text: #f2f2f2; --muted: #8a8a8a; --faint: #4a4a4a; --line: #1f1f1f; --red: #ff5f56;
+    --school: #7fa7ff; --work: #e2b25c; --family: #7ccf93; --other: #777; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); }
+  body { color: var(--text); font: 14.5px/1.4 'Inter Tight', system-ui, sans-serif; padding: calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 32px); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+  header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -.02em; }
+  .refresh { border: 1px solid #333; background: none; color: var(--text); font: 500 13px 'Inter Tight'; padding: 6px 12px; border-radius: 6px; }
+  .refresh span { color: var(--muted); margin-left: 6px; }
+  .counts { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+  .counts div { padding: 10px 0 10px; }
+  .counts div + div { padding-left: 12px; border-left: 1px solid var(--line); }
+  .counts b { font-size: 22px; font-weight: 600; display: block; line-height: 1.15; }
+  .counts span { color: var(--muted); font-size: 12px; }
+  .counts .bad b, .counts .bad span { color: var(--red); }
+  section { margin-top: 22px; }
+  .sh { display: flex; align-items: baseline; gap: 8px; cursor: pointer; user-select: none; padding-bottom: 6px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+  .sh .n { color: var(--muted); font-weight: 400; }
+  .sh .car { margin-left: auto; color: var(--faint); transition: transform .15s; }
+  .collapsed .car { transform: rotate(-90deg); }
+  .collapsed .body { display: none; }
+  .row { display: grid; grid-template-columns: 2px 1fr auto; gap: 0 12px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .bar { background: var(--c); border-radius: 1px; }
+  .from { font-size: 13px; color: var(--muted); }
+  .subj { font-weight: 600; letter-spacing: -.005em; }
+  .snip { font-size: 13.5px; color: var(--muted); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .side { text-align: right; font-size: 12px; color: var(--muted); white-space: nowrap; display: flex; flex-direction: column; gap: 3px; }
+  .side .due { color: var(--text); font-weight: 500; }
+  .side .cat { color: var(--c); }
+  .row.overdue .due { color: var(--red); }
+  .row.overdue .bar { background: var(--red); }
+  .junk .row { padding: 8px 0; }
+  .junk .subj { font-weight: 400; color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<header><h1>Inbox</h1><button class="refresh">Refresh<span id="ref"></span></button></header>
+<div class="counts" id="counts"></div>
+<main id="list"></main>
+<script src="mock.js"></script>
+<script>
+  const M = MOCK, c = M.counts();
+  document.getElementById('ref').textContent = M.refreshedAgo().replace(' ago', '');
+  document.getElementById('counts').innerHTML = `
+    <div><b>${c.action}</b><span>need action</span></div>
+    <div><b>${c.week}</b><span>due this week</span></div>
+    <div class="${c.overdue ? 'bad' : ''}"><b>${c.overdue}</b><span>overdue</span></div>`;
+  const short = (dl) => dl.overdue ? `Overdue ${M.MON[dl.date.getMonth()]} ${dl.date.getDate()}` : dl.label;
+  document.getElementById('list').innerHTML = M.grouped().map((s) => `
+    <section data-section class="${s.collapsed ? 'collapsed' : ''} ${s.id}">
+      <div class="sh" data-toggle>${M.esc(s.name)} <span class="n">${s.items.length}</span><span class="car">▾</span></div>
+      <div class="body">${s.items.map((e) => {
+        const dl = M.deadline(e), code = M.codeLeft(e);
+        if (s.id === 'junk') return `<div class="row" style="--c:var(--faint)"><div class="bar"></div><div><div class="from">${M.esc(e.from)}</div><div class="subj">${M.esc(e.subject)}</div></div><div class="side">${M.ago(e.date)}</div></div>`;
+        return `<div class="row ${dl && dl.overdue ? 'overdue' : ''}" style="--c:var(--${e.cat})">
+          <div class="bar"></div>
+          <div><div class="from">${M.esc(e.from)}</div><div class="subj">${M.esc(e.subject)}</div><div class="snip">${M.esc(e.snippet)}</div></div>
+          <div class="side"><span>${M.ago(e.date)}</span><span class="cat">${M.CATS[e.cat]}</span>${dl ? `<span class="due">${M.esc(short(dl))}</span>` : code !== null ? `<span class="due">${code}m left</span>` : ''}</div>
+        </div>`;
+      }).join('')}</div>
+    </section>`).join('');
+  M.wireToggles();
+</script>
+</body>
+</html>

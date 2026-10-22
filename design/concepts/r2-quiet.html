@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quiet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0e0e10; --text: #ececee; --muted: #8b8b93; --faint: #55555c; --line: #1e1e22; --accent: #8fb3ff; --red: #ff6b6b;
+    --school: #8fb3ff; --work: #d6b37a; --family: #9fd4a8; --other: #8b8b93; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); }
+  body { color: var(--text); font: 15px/1.45 -apple-system, 'Inter', system-ui, sans-serif; padding: calc(env(safe-area-inset-top) + 20px) 20px calc(env(safe-area-inset-bottom) + 32px); -webkit-font-smoothing: antialiased; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .refresh { width: 38px; height: 38px; border-radius: 50%; border: 0; background: #1a1a1e; color: var(--text); font-size: 18px; display: grid; place-items: center; }
+  .counts { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .counts b { color: var(--text); font-weight: 600; }
+  .counts .bad b, .counts .bad { color: var(--red); }
+  section { margin-top: 30px; }
+  .sh { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+  .sh .n { color: var(--faint); }
+  .sh .car { margin-left: auto; font-size: 12px; transition: transform .15s; }
+  .collapsed .car { transform: rotate(-90deg); }
+  .collapsed .body { display: none; }
+  .item { padding: 14px 0; position: relative; }
+  .item + .item { border-top: 1px solid var(--line); }
+  .r1 { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+  .subj { font-size: 16px; font-weight: 600; margin-top: 2px; letter-spacing: -.01em; }
+  .snip { font-size: 14px; color: var(--muted); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+  .cat::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: 1px; }
+  .due { color: var(--text); }
+  .item.overdue .due, .item.overdue .subj { color: var(--red); }
+  .junk .item { padding: 10px 0; }
+  .junk .subj { font-size: 14px; font-weight: 500; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Inbox</h1><div class="sub" id="ref"></div></div>
+  <button class="refresh" aria-label="Refresh">↻</button>
+</header>
+<div class="counts" id="counts"></div>
+<main id="list"></main>
+<script src="mock.js"></script>
+<script>
+  const M = MOCK, c = M.counts();
+  document.getElementById('ref').textContent = `Refreshed ${M.refreshedAgo()}`;
+  document.getElementById('counts').innerHTML = `<b>${c.action}</b> need action · <b>${c.week}</b> due this week · <span class="bad"><b>${c.overdue}</b> overdue</span>`;
+  document.getElementById('list').innerHTML = M.grouped().map((s) => `
+    <section data-section class="${s.collapsed ? 'collapsed' : ''} ${s.id}">
+      <div class="sh" data-toggle>${M.esc(s.name)} <span class="n">${s.items.length}</span><span class="car">▾</span></div>
+      <div class="body">${s.items.map((e) => {
+        const dl = M.deadline(e), code = M.codeLeft(e);
+        if (s.id === 'junk') return `<div class="item"><div class="r1"><span>${M.esc(e.from)}</span><span>${M.ago(e.date)}</span></div><div class="subj">${M.esc(e.subject)}</div></div>`;
+        return `<div class="item ${dl && dl.overdue ? 'overdue' : ''}">
+          <div class="r1"><span>${M.esc(e.from)}</span><span>${M.ago(e.date)}</span></div>
+          <div class="subj">${M.esc(e.subject)}</div>
+          <div class="snip">${M.esc(e.snippet)}</div>
+          <div class="meta"><span class="cat" style="--c:var(--${e.cat})">${M.CATS[e.cat]}</span>${dl ? `<span class="due">${dl.overdue ? '' : 'Due '}${M.esc(dl.label)}</span>` : code !== null ? `<span class="due">Code · ${code} min left</span>` : ''}</div>
+        </div>`;
+      }).join('')}</div>
+    </section>`).join('');
+  M.wireToggles();
+</script>
+</body>
+</html>
