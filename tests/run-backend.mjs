@@ -130,6 +130,18 @@ call({ action: 'tap', id: 's25', token: TOKEN });
 r = call({ action: 'refresh', token: TOKEN });
 check(r.emails.find((e) => e.id === 's25')?.opened === true && r.emails.find((e) => e.id === 's26')?.opened === false, 'cards carry "opened" from the script');
 
+// Gmail rate limit: short blips are retried; a long one stops the chunk without losing threads
+fake.quota.failNext = 2;
+gmailThreads.get('s19').historyId = nextHist();
+r = call({ action: 'refresh', token: TOKEN });
+check(r.ok && r.done && !r.rateLimited && r.emails.some((e) => e.id === 's19'), 'brief Gmail rate limit is retried and the scan finishes');
+fake.quota.failNext = 3;
+gmailThreads.get('s19').historyId = nextHist();
+r = call({ action: 'refresh', token: TOKEN });
+check(r.ok && !r.done && r.rateLimited && r.processed === 0, 'long rate limit: chunk stops, thread stays queued, app is told');
+r = call({ action: 'refresh', token: TOKEN });
+check(r.ok && r.done && r.emails.some((e) => e.id === 's19'), 'next call picks it back up (nothing dropped)');
+
 // Config change -> full re-analyze
 vm.runInContext("CONFIG.URGENT_HOURS = 72;", ctx);
 r = call({ action: 'refresh', token: TOKEN });

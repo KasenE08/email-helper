@@ -3,6 +3,23 @@
  * Turns each thread into the plain "email" object the rules engine expects.
  */
 
+// Gmail limits how fast one account can make API calls. Pace a little, and on "quota" / "rate limit"
+// errors wait and retry; if it keeps failing, stop the chunk (progress is saved) and tell the app.
+var PACE_MS = 120;
+
+function isRateLimit_(err) { return /quota|rate ?limit|too many requests|429|userRateLimitExceeded/i.test(String(err && err.message || err)); }
+
+function gmailCall_(fn) {
+  for (var attempt = 0; ; attempt++) {
+    try { return fn(); }
+    catch (err) {
+      if (!isRateLimit_(err)) throw err;
+      if (attempt >= 2) { var e = new Error('Gmail rate limit'); e.rateLimited = true; throw e; }
+      Utilities.sleep(2000 * Math.pow(2, attempt)); // 2 s, then 4 s
+    }
+  }
+}
+
 var META_HEADERS = ['From', 'To', 'Cc', 'Subject', 'List-Unsubscribe', 'Precedence', 'Auto-Submitted', 'Message-ID'];
 var BODY_MAX_CHARS = 6000;
 
@@ -18,10 +35,8 @@ function myEmail_() {
 function listWindowThreads_(cfg) {
   var out = [], token;
   do {
-    var res = Gmail.Users.Threads.list('me', {
-      q: 'in:inbox newer_than:' + (cfg.WINDOW_DAYS || 60) + 'd',
-      maxResults: 500,
-      pageToken: token,
+    var res = gmailCall_(function () {
+      return Gmail.Users.Threads.list('me', { q: 'in:inbox newer_than:' + (cfg.WINDOW_DAYS || 60) + 'd', maxResults: 500, pageToken: token });
     });
     (res.threads || []).forEach(function (t) { out.push({ id: t.id, historyId: String(t.historyId) }); });
     token = res.nextPageToken;
@@ -52,7 +67,7 @@ function parseList_(s) { return (String(s || '').match(/[^\s<>,"';:]+@[^\s<>,"';
  *   email object               otherwise
  */
 function loadThread_(id, me, cfg) {
-  var t = Gmail.Users.Threads.get('me', id, { format: 'metadata', metadataHeaders: META_HEADERS });
+  var t = gmailCall_(function () { return Gmail.Users.Threads.get('me', id, { format: 'metadata', metadataHeaders: META_HEADERS }); });
   var msgs = t.messages || [];
   var meN = normEmail(me);
   var isMine = function (m) { return (m.labelIds || []).indexOf('SENT') >= 0 || normEmail(parseAddress_(header_(m, 'From')).email) === meN; };
@@ -85,7 +100,7 @@ function loadThread_(id, me, cfg) {
     body: '',
   };
   if (needsBody_(email, cfg)) {
-    try { email.body = loadBody_(last.id); } catch (e) { console.warn('body failed for ' + id + ': ' + e); }
+    try { email.body = loadBody_(last.id); } catch (e) { if (e.rateLimited) throw e; console.warn('body failed for ' + id + ': ' + e); }
   }
   return email;
 }
@@ -117,7 +132,7 @@ function partsOf_(payload) {
 
 /** Plain-text body of one message (prefers text/plain, falls back to HTML). For the rules. */
 function loadBody_(messageId) {
-  var p = partsOf_(Gmail.Users.Messages.get('me', messageId, { format: 'full' }).payload);
+  var p = partsOf_(gmailCall_(function () { return Gmail.Users.Messages.get('me', messageId, { format: 'full' }); }).payload);
   var text = p.plain ? cleanText(p.plain) : htmlToText(p.html);
   return text.slice(0, BODY_MAX_CHARS);
 }
@@ -131,7 +146,7 @@ var READ_MAX_MESSAGES = 8;
  */
 function readThread_(id) {
   var me = normEmail(myEmail_());
-  var t = Gmail.Users.Threads.get('me', id, { format: 'full' });
+  var t = gmailCall_(function () { return Gmail.Users.Threads.get('me', id, { format: 'full' }); });
   var msgs = (t.messages || []).slice(-READ_MAX_MESSAGES);
   return {
     id: t.id,

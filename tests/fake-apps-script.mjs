@@ -12,6 +12,7 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'apps-script');
 export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com' } = {}) {
   const ME = me;
   const writes = { n: 0 };
+  const quota = { failNext: 0 };
   // ---------- fakes ----------
   const clock = { t: 0 };
   const props = new Map();
@@ -52,6 +53,7 @@ export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com'
       DigestAlgorithm: { MD5: 'md5' },
       computeDigest: (alg, s) => [...createHash(alg).update(s).digest()].map((b) => (b > 127 ? b - 256 : b)),
       getUuid: () => randomUUID(),
+      sleep: (ms) => { clock.t += ms; },
       base64DecodeWebSafe: (s) => [...Buffer.from(s, 'base64url')],
       newBlob: (bytes) => ({ getDataAsString: () => Buffer.from(bytes).toString('utf8') }),
     },
@@ -66,6 +68,7 @@ export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com'
           list: () => ({ threads: [...gmailThreads.values()].map((t) => ({ id: t.id, historyId: t.historyId })) }),
           get: (_, id, opts = {}) => {
             clock.t += 1000;
+            if (quota.failNext > 0) { quota.failNext--; throw new Error("API call to gmail.users.threads.get failed with error: Quota exceeded for quota metric 'Total Query Cost'"); }
             const t = gmailThreads.get(id);
             if (!t) throw new Error('Not Found');
             const copy = JSON.parse(JSON.stringify(t));
@@ -125,5 +128,5 @@ export function createFakeScript({ chunkSeconds = 8, me = 'kasen.test@gmail.com'
 
   const call = (params) => JSON.parse(vm.runInContext(`doGet(${JSON.stringify({ parameter: params })}).content`, ctx));
     const nextHist = () => String(hist++);
-    return { ctx, call, gmailThreads, props, clock, addThread, at, samples, ME, nextHist, sheetWrites: () => writes.n };
+    return { ctx, call, gmailThreads, props, clock, addThread, at, samples, ME, nextHist, sheetWrites: () => writes.n, quota };
 }

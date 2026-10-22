@@ -355,8 +355,15 @@ async function refresh() {
         banner('');
         break;
       }
-      progressBanner(res.processed, res.total); // first run: keep going, showing progress
       render();
+      if (res.rateLimited) {
+        // Gmail asked us to slow down: wait 30 s (with a countdown), then continue where we left off.
+        for (let sec = 30; sec > 0; sec--) {
+          banner(`Gmail asked to slow down. Continuing in ${sec} s… <b>${res.processed}/${res.total}</b>`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      progressBanner(res.processed, res.total); // first run: keep going, showing progress
     }
   } catch (err) {
     banner(esc(err.message), err.kind === 'offline' ? '' : 'error');

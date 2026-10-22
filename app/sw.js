@@ -2,7 +2,7 @@
 // Strategy: network first (so a new deploy shows up on the very next open), falling back to
 // the cache if the network is slow (>2.5 s) or offline. Requests to other origins (the Apps
 // Script) are never touched.
-const CACHE = 'eh-shell-v6';
+const CACHE = 'eh-shell-v7';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/model.js', 'js/store.js', 'js/api.js', 'js/mock-data.js',

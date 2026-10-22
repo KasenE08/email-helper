@@ -100,12 +100,13 @@ section { margin-top: 30px; }
 
 /* Toast */
 .toast {
-  position: fixed; left: 50%; bottom: calc(var(--safe-bottom) + 18px); transform: translate(-50%, 140%);
+  position: fixed; left: 50%; bottom: calc(var(--safe-bottom) + 18px); transform: translate(-50%, 24px);
+  opacity: 0; visibility: hidden; pointer-events: none;
   display: flex; align-items: center; gap: 16px; padding: 11px 12px 11px 16px; border-radius: 12px;
   background: #2a2a30; color: var(--text); font-size: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
-  transition: transform .25s ease; z-index: 40; max-width: calc(100% - 32px); white-space: nowrap;
+  transition: transform .25s ease, opacity .2s ease, visibility .25s; z-index: 40; max-width: calc(100% - 32px); white-space: nowrap;
 }
-.toast.show { transform: translate(-50%, 0); }
+.toast.show { transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; }
 .toast button { color: var(--accent); font-weight: 600; padding: 2px 4px; }
 
 /* Settings sheet */

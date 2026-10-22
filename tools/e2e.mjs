@@ -68,6 +68,7 @@ const serverState = () => { const r = fake.call({ action: 'refresh', token: TOKE
 
 // 1. First launch -> connect
 await page.goto(APP);
+check(!(await page.locator('#toast').isVisible()) && !(await page.locator('#toast-undo').isVisible()), 'no stray toast / Undo button on screen');
 check(await page.locator('#settings').isVisible(), 'first launch opens the Connect screen');
 await page.fill('#f-url', SCRIPT_URL);
 await page.fill('#f-token', 'wrong-token');
@@ -220,6 +221,16 @@ check(true, 'script timeout: "took too long… picks up where it left off"');
 await shot('11-timeout');
 
 mode = 'normal';
+// Gmail rate limit mid-scan: app counts down, then continues by itself
+fake.gmailThreads.get('s19').historyId = fake.nextHist();
+fake.quota.failNext = 3;
+await page.click('#refresh-btn');
+await page.waitForFunction(() => (document.querySelector('#banner').innerText || '').includes('Gmail asked to slow down'), null, { timeout: 15000 });
+check(true, 'rate limit: "Gmail asked to slow down. Continuing in 30 s…"');
+await shot('12b-rate-limit-countdown');
+await page.waitForFunction(() => !document.querySelector('#refresh-btn').classList.contains('spinning'), null, { timeout: 60000 });
+check(await page.locator('#banner').isHidden() && await page.locator('.item[data-id="s19"]').count() === 1, 'after the wait it continues and finishes');
+
 await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('eh.settings')); s.token = 'stale'; localStorage.setItem('eh.settings', JSON.stringify(s)); });
 await page.reload();
 await page.click('#refresh-btn');

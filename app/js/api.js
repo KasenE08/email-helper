@@ -46,6 +46,7 @@ async function call(settings, action, params = {}, timeoutMs = EVENT_TIMEOUT_MS)
     const msgs = {
       'bad-token': 'Wrong token. Copy it again from the setup() log in Apps Script.',
       busy: 'The script is busy with another refresh. Try again in a moment.',
+      'rate-limit': 'Gmail asked the script to slow down (too many requests in a minute). Wait a minute, then tap ↻. Nothing is lost.',
       'unknown-action': 'The script is out of date. Paste the new code and make a New version in Manage deployments.',
     };
     throw new ApiError(msgs[data.error] || `Script error: ${data.message || data.error}`, data.error || 'server');
